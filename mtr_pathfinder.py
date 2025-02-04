@@ -676,7 +676,9 @@ def create_graph(data: list, start: str, end: str, IGNORED_LINES: bool,
             for x in final_wait:
                 lcm_sum = lcm(lcm_sum, round(x))
             for x in final_wait:
-                sum_interval += (lcm_sum / round(x))
+                if x != 0:
+                    sum_interval += (lcm_sum / round(x))
+
             sum_int = lcm_sum / sum_interval / 2
 
             if (s1, s2) in waiting_walking_dict:
