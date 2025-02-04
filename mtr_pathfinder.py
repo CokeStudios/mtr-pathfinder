@@ -27,11 +27,6 @@ BASE_PATH: str = r'mtr_pathfinder_data'
 INTERVAL_PATH: str = r'mtr-route-data.json'
 PNG_PATH: str = r'mtr_pathfinder_data'
 
-version1: str = strftime('%Y%m%d-%H%M',
-                         gmtime(os.path.getmtime(LOCAL_FILE_PATH)))
-version2: str = strftime('%Y%m%d-%H%M',
-                         gmtime(os.path.getmtime(INTERVAL_PATH)))
-
 SERVER_TICK: int = 20
 
 DEFAULT_AVERAGE_SPEED: int = 13     # block/s
@@ -1188,7 +1183,7 @@ def generate_image(pattern, shortest_distance, waiting_time, route_type,
 
 
 def main():
-    global IGNORED_LINES
+    global IGNORED_LINES, version1, version2
     IGNORED_LINES += ORIGINAL_IGNORED_LINES
     if UPDATE_DATA is True or (not os.path.exists(LOCAL_FILE_PATH)):
         data = fetch_data(LINK)
@@ -1198,6 +1193,11 @@ def main():
 
     if GEN_ROUTE_INTERVAL is True or (not os.path.exists(INTERVAL_PATH)):
         gen_route_interval()
+
+    version1: str = strftime('%Y%m%d-%H%M',
+                             gmtime(os.path.getmtime(LOCAL_FILE_PATH)))
+    version2: str = strftime('%Y%m%d-%H%M',
+                             gmtime(os.path.getmtime(INTERVAL_PATH)))
 
     G = create_graph(data, station1, station2, IGNORED_LINES, CALCULATE_HIGH_SPEED,
                      CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT,
