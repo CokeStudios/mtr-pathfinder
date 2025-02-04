@@ -421,7 +421,7 @@ def create_graph(data: list, start: str, end: str, IGNORED_LINES: bool,
             AVOID_STATIONS == [] and route_type == RouteType.WAITING:
         filename = f'mtr_pathfinder_temp{os.sep}' + \
             f'{int(CALCULATE_HIGH_SPEED)}{int(CALCULATE_WALKING_WILD)}' + \
-                f'-{version1}-{version2}.dat'
+            f'-{version1}-{version2}.dat'
         if os.path.exists(filename):
             with open(filename, 'rb') as f:
                 tup = pickle.load(f)
@@ -949,10 +949,10 @@ def save_image(route_type: RouteType, every_route_time: list,
     '''
     pattern = []
     last_sta = ()
-    time_img = Image.open(PNG_PATH + '/time.png')
+    time_img = Image.open(PNG_PATH + os.sep + 'time.png')
     for route_data in every_route_time:
         now_sta = (route_data[0], route_data[1])
-        route_img = Image.open(PNG_PATH + f'/{route_data[-1]}.png')
+        route_img = Image.open(PNG_PATH + os.sep + f'{route_data[-1]}.png')
         terminus = route_data[4][0] + '方向 To ' + route_data[4][1]
         time1 = str(strftime('%M:%S', gmtime(route_data[5])))
         time2 = str(strftime('%M:%S', gmtime(route_data[6])))
@@ -1021,9 +1021,11 @@ def calculate_height_width(pattern: list[list[ImagePattern]],
     Calculate the width and the height of the image.
     '''
     text_size = 20
-    font = ImageFont.truetype(BASE_PATH + '/fonts/NotoSansKR-Regular.ttf',
+    font = ImageFont.truetype(BASE_PATH + os.sep + 'fonts' + os.sep +
+                              'NotoSansKR-Regular.ttf',
                               size=text_size)
-    font2 = ImageFont.truetype(BASE_PATH + '/fonts/NotoSansKR-Regular.ttf',
+    font2 = ImageFont.truetype(BASE_PATH + os.sep + 'fonts' + os.sep +
+                               'NotoSansKR-Regular.ttf',
                                size=final_str_size)
     route_len_list = [font.getlength(x[1]) + int(x[0].value) for x in pattern
                       if x[0] not in
@@ -1058,13 +1060,14 @@ def generate_image(pattern, shortest_distance, waiting_time, route_type,
     '''
     font_list = [BASE_PATH + x
                  for x in (
-                    "/fonts/NotoSansSC-Regular.ttf",
-                    "/fonts/NotoSansTC-Regular.ttf",
-                    "/fonts/NotoSansHK-Regular.ttf",
-                    "/fonts/NotoSansJP-Regular.ttf",
-                    "/fonts/NotoSansKR-Regular.ttf",
-                    "/fonts/NotoSansArabic-Regular.ttf",
-                    "/fonts/NotoSansThaiLooped-Regular.ttf",
+                    os.sep + 'fonts' + os.sep + "NotoSansSC-Regular.ttf",
+                    os.sep + 'fonts' + os.sep + "NotoSansTC-Regular.ttf",
+                    os.sep + 'fonts' + os.sep + "NotoSansHK-Regular.ttf",
+                    os.sep + 'fonts' + os.sep + "NotoSansJP-Regular.ttf",
+                    os.sep + 'fonts' + os.sep + "NotoSansKR-Regular.ttf",
+                    os.sep + 'fonts' + os.sep + "NotoSansArabic-Regular.ttf",
+                    os.sep + 'fonts' + os.sep +
+                    "NotoSansThaiLooped-Regular.ttf",
                  )
                  ]
     fonts = load_fonts(*font_list)
@@ -1091,7 +1094,7 @@ def generate_image(pattern, shortest_distance, waiting_time, route_type,
     image = Image.new('RGB',
                       calculate_height_width(pattern, route_type,
                                              final_str, final_str_size),
-                                             color='white')
+                      color='white')
     draw = ImageDraw.Draw(image)
 
     y = last_y = 10
@@ -1201,7 +1204,8 @@ def main():
     version2 = strftime('%Y%m%d-%H%M',
                         gmtime(os.path.getmtime(INTERVAL_PATH)))
 
-    G = create_graph(data, station1, station2, IGNORED_LINES, CALCULATE_HIGH_SPEED,
+    G = create_graph(data, station1, station2, IGNORED_LINES,
+                     CALCULATE_HIGH_SPEED,
                      CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT,
                      AVOID_STATIONS, RouteType.WAITING, ORIGINAL_IGNORED_LINES)
     shortest_path, shortest_distance, waiting_time, riding_time, ert = \
@@ -1212,7 +1216,8 @@ def main():
     elif shortest_path is None:
         print('车站输入错误，请重新输入！')
     else:
-        save_image(RouteType.WAITING, ert, shortest_distance, waiting_time, show=True)
+        save_image(RouteType.WAITING, ert, shortest_distance, waiting_time,
+                   show=True)
 
 
 if __name__ == '__main__':
