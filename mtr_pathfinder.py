@@ -279,7 +279,6 @@ def gen_route_interval() -> None:
         else:
             freq_dict[route] = round_ten(sum(arrivals) / len(arrivals))
 
-    print(freq_dict)
     y = input(f'是否替换{INTERVAL_PATH}文件? (Y/N) ').lower()
     if y == 'y':
         with open(INTERVAL_PATH, 'w', encoding='utf-8') as f:
@@ -1193,8 +1192,11 @@ def generate_image(pattern, shortest_distance, waiting_time, route_type,
 
 
 def main():
-    global IGNORED_LINES, version1, version2
+    global LINK, IGNORED_LINES, version1, version2
     IGNORED_LINES += ORIGINAL_IGNORED_LINES
+    if LINK.endswith('/index.html'):
+        LINK = LINK.rstrip('/index.html')
+
     if UPDATE_DATA is True or (not os.path.exists(LOCAL_FILE_PATH)):
         data = fetch_data(LINK)
     else:
@@ -1228,7 +1230,7 @@ def main():
 if __name__ == '__main__':
     # 地图设置
     # 在线线路图网址，结尾删除"/"
-    LINK: str = 'https://cathop.gteh.top'
+    LINK: str = ''
     # 从A站到B站，非出站换乘（越野）的最远步行距离，默认值为1500
     MAX_WILD_BLOCKS: int = 1500
     # 实际跑车的线路如果是隐藏线路，其对应的在地图上显示的线路
@@ -1244,9 +1246,9 @@ if __name__ == '__main__':
     ORIGINAL_IGNORED_LINES: list = []
 
     # 是否更新车站数据
-    UPDATE_DATA: bool = True
+    UPDATE_DATA: bool = False
     # 是否更新路线数据
-    GEN_ROUTE_INTERVAL: bool = True
+    GEN_ROUTE_INTERVAL: bool = False
 
     # 寻路设置
     # 避开的路线
@@ -1265,7 +1267,7 @@ if __name__ == '__main__':
     # 输出的图片中是否显示详细信息，默认值为False
     DETAIL: bool = False
     # 出发、到达车站
-    station1 = '南环'
-    station2 = '西港码头'
+    station1 = ''
+    station2 = ''
 
     main()
