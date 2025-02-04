@@ -1191,8 +1191,11 @@ def generate_image(pattern, shortest_distance, waiting_time, route_type,
 
 
 def main():
-    global IGNORED_LINES, version1, version2
+    global LINK, IGNORED_LINES, version1, version2
     IGNORED_LINES += ORIGINAL_IGNORED_LINES
+    if LINK.endswith('/index.html'):
+        LINK = LINK.rstrip('/index.html')
+
     if UPDATE_DATA is True or (not os.path.exists(LOCAL_FILE_PATH)):
         data = fetch_data(LINK)
     else:
