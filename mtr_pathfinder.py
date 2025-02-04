@@ -11,6 +11,7 @@ from time import gmtime, strftime, time
 from typing import Optional, Dict, Literal, Tuple, List, Union
 from queue import Queue
 import base64
+import hashlib
 import json
 import os
 import pickle
@@ -21,11 +22,6 @@ from opencc import OpenCC
 from PIL import Image, ImageDraw, ImageFont
 import networkx as nx
 import requests
-
-LOCAL_FILE_PATH: str = r'mtr-station-data.json'
-BASE_PATH: str = r'mtr_pathfinder_data'
-INTERVAL_PATH: str = r'mtr-route-data.json'
-PNG_PATH: str = r'mtr_pathfinder_data'
 
 SERVER_TICK: int = 20
 
@@ -1192,10 +1188,17 @@ def generate_image(pattern, shortest_distance, waiting_time, route_type,
 
 
 def main():
-    global LINK, IGNORED_LINES, version1, version2
+    global LINK, IGNORED_LINES, version1, version2, \
+        LOCAL_FILE_PATH, INTERVAL_PATH, BASE_PATH, PNG_PATH
     IGNORED_LINES += ORIGINAL_IGNORED_LINES
     if LINK.endswith('/index.html'):
         LINK = LINK.rstrip('/index.html')
+
+    link_hash = hashlib.md5(LINK.encode('utf-8')).hexdigest()
+    LOCAL_FILE_PATH = f'mtr-station-data-{link_hash}.json'
+    INTERVAL_PATH = f'mtr-route-data-{link_hash}.json'
+    BASE_PATH = 'mtr_pathfinder_data'
+    PNG_PATH = BASE_PATH
 
     if UPDATE_DATA is True or (not os.path.exists(LOCAL_FILE_PATH)):
         data = fetch_data(LINK)
