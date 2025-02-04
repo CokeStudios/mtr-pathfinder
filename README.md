@@ -10,4 +10,4 @@ Download the repo zip, edit params in ```mtr_pathfinder.py``` and run ```mtr_pat
 
 需 Python 3.6 - 3.12。
 
-下载仓库 zip 后，编辑 mtr_pathfinder.py 以更改参数，运行 mtr_pathfinder.py 即可寻路。
+下载仓库 zip 后，编辑 ```mtr_pathfinder.py``` 以更改参数，运行 ```mtr_pathfinder.py``` 即可寻路。
