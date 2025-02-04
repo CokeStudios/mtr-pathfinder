@@ -1204,7 +1204,13 @@ def main():
                      AVOID_STATIONS, RouteType.WAITING, ORIGINAL_IGNORED_LINES)
     shortest_path, shortest_distance, waiting_time, riding_time, ert = \
         find_shortest_route(G, station1, station2, data)
-    save_image(RouteType.WAITING, ert, shortest_distance, waiting_time, show=True)
+
+    if shortest_path is False:
+        print('找不到路线！')
+    elif shortest_path is None:
+        print('车站输入错误，请重新输入！')
+    else:
+        save_image(RouteType.WAITING, ert, shortest_distance, waiting_time, show=True)
 
 
 if __name__ == '__main__':
