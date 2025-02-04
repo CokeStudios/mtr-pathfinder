@@ -1,7 +1,9 @@
 ## Install requirements 安装依赖项
 ```
-pip3 install fontTools opencc==1.1.6 pillow networkx requests
+pip3 install -U fontTools opencc pillow networkx requests
 ```
+
+If there's an error, try ```pip3 install fontTools opencc==1.1.6 pillow networkx requests```
 
 ## Usage 使用
 For Python 3.6 - 3.12 only.
