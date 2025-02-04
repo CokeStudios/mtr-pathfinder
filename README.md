@@ -1,2 +1,2 @@
-# mtr-pathfinder
-A pathfinder for Minecraft Transit Railway 3.x.x
+## 安装
+将 mtr_pathfinder_data.zip 解压缩，编辑 mtr_pathfinder.py 以更改参数，运行 mtr_pathfinder.py 即可寻路。
