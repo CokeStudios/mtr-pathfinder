@@ -1182,9 +1182,14 @@ def main(station1: str, station2: str, LINK: str,
          AVOID_STATIONS: list = [],
          CALCULATE_HIGH_SPEED: bool = True, CALCULATE_BOAT: bool = True,
          CALCULATE_WALKING_WILD: bool = False,
-         ONLY_LRT: bool = False, DETAIL: bool = False):
+         ONLY_LRT: bool = False, DETAIL: bool = False,
+         show=False) -> Union[str, False, None]:
     '''
     Main function. You can call it in your own code.
+    Output:
+    False -- Route not found 找不到路线
+    None -- Incorrect station name(s) 车站输入错误，请重新输入
+    else 其他 -- base64 str of the generated image 生成图片的 base64 字符串
     '''
     IGNORED_LINES += ORIGINAL_IGNORED_LINES
     STATION_TABLE = {x.lower(): y.lower() for x, y in STATION_TABLE.items()}
@@ -1216,16 +1221,12 @@ def main(station1: str, station2: str, LINK: str,
     shortest_path, shortest_distance, waiting_time, riding_time, ert = \
         find_shortest_route(G, station1, station2, data, STATION_TABLE)
 
-    if shortest_path is False:
-        print('找不到路线！')
-        return shortest_path
-    elif shortest_path is None:
-        print('车站输入错误，请重新输入！')
+    if shortest_path in [False, None]:
         return shortest_path
     else:
         b64 = save_image(route_type, ert, shortest_distance, riding_time,
                          waiting_time, BASE_PATH, version1, version2, DETAIL,
-                         PNG_PATH, show=True)
+                         PNG_PATH, show)
         return b64
 
 
@@ -1284,7 +1285,7 @@ def run():
          TRANSFER_ADDITION, WILD_ADDITION, STATION_TABLE,
          ORIGINAL_IGNORED_LINES, UPDATE_DATA, GEN_ROUTE_INTERVAL,
          IGNORED_LINES, AVOID_STATIONS, CALCULATE_HIGH_SPEED,
-         CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT, DETAIL)
+         CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT, DETAIL, show=True)
 
 
 if __name__ == '__main__':
