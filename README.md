@@ -1,7 +1,7 @@
 ## Install requirements 安装依赖项
-For Python 3.6 - 3.12 only.
+For Python 3.7 - 3.12 only.
 
-需 Python 3.6 - 3.12。
+需 Python 3.7 - 3.12。
 
 ```
 pip3 install -U fontTools opencc pillow networkx requests
