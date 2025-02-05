@@ -1,5 +1,5 @@
 '''
-A module to find paths between two stations.
+Find paths between two stations for Minecraft Transit Railway.
 '''
 
 from enum import Enum
@@ -923,7 +923,7 @@ def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
 def save_image(route_type: RouteType, every_route_time: list,
                shortest_distance, riding_time, waiting_time,
                BASE_PATH, version1, version2,
-               DETAIL, PNG_PATH, show=False) -> None:
+               DETAIL, PNG_PATH, show=False) -> tuple[Image.Image, str]:
     '''
     Save the image of the route.
     '''
@@ -1037,7 +1037,7 @@ def calculate_height_width(pattern: list[list[ImagePattern]],
 
 def generate_image(pattern, shortest_distance, riding_time, waiting_time,
                    route_type, BASE_PATH, version1, version2,
-                   show: bool = False):
+                   show: bool = False) -> tuple[Image.Image, str]:
     '''
     Generate the image with PIL.
     '''
@@ -1168,7 +1168,7 @@ def generate_image(pattern, shortest_distance, riding_time, waiting_time,
 
     byte_data = output_buffer.getvalue()
     base64_str = base64.b64encode(byte_data).decode('utf-8')
-    return base64_str
+    return image, base64_str
 
 
 def main(station1: str, station2: str, LINK: str,
@@ -1183,13 +1183,15 @@ def main(station1: str, station2: str, LINK: str,
          CALCULATE_HIGH_SPEED: bool = True, CALCULATE_BOAT: bool = True,
          CALCULATE_WALKING_WILD: bool = False,
          ONLY_LRT: bool = False, DETAIL: bool = False,
-         show=False) -> Union[str, False, None]:
+         show=False) -> Union[tuple[Image.Image, str], False, None]:
     '''
     Main function. You can call it in your own code.
     Output:
     False -- Route not found 找不到路线
     None -- Incorrect station name(s) 车站输入错误，请重新输入
-    else 其他 -- base64 str of the generated image 生成图片的 base64 字符串
+    else 其他 -- tuple
+    (image object, base64 str of the generated image)
+    (图片对象, 生成图片的 base64 字符串)
     '''
     IGNORED_LINES += ORIGINAL_IGNORED_LINES
     STATION_TABLE = {x.lower(): y.lower() for x, y in STATION_TABLE.items()}
@@ -1224,10 +1226,9 @@ def main(station1: str, station2: str, LINK: str,
     if shortest_path in [False, None]:
         return shortest_path
     else:
-        b64 = save_image(route_type, ert, shortest_distance, riding_time,
-                         waiting_time, BASE_PATH, version1, version2, DETAIL,
-                         PNG_PATH, show)
-        return b64
+        return save_image(route_type, ert, shortest_distance, riding_time,
+                          waiting_time, BASE_PATH, version1, version2, DETAIL,
+                          PNG_PATH, show)
 
 
 def run():
