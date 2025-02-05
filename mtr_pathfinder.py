@@ -47,6 +47,7 @@ def load_fonts(*font_paths: str) -> Dict[str, TTFont]:
     return fonts
 
 
+# From https://github.com/TrueMyst/PillowFontFallback/blob/main/fontfallback/writing.py
 def has_glyph(font: TTFont, glyph: str) -> bool:
     """
     Checks if the given font contains a glyph for the specified character.
@@ -57,6 +58,7 @@ def has_glyph(font: TTFont, glyph: str) -> bool:
     return False
 
 
+# From https://github.com/TrueMyst/PillowFontFallback/blob/main/fontfallback/writing.py
 def merge_chunks(text: str, fonts: Dict[str, TTFont]) -> List[List[str]]:
     """
     Merges consecutive characters with the same font into clusters, optimizing font lookup.
@@ -80,6 +82,7 @@ def merge_chunks(text: str, fonts: Dict[str, TTFont]) -> List[List[str]]:
     return cluster
 
 
+# From https://github.com/TrueMyst/PillowFontFallback/blob/main/fontfallback/writing.py
 def draw_text_v2(
     draw: ImageDraw.ImageDraw,
     xy: Tuple[int, int],
@@ -118,6 +121,7 @@ def draw_text_v2(
         y_offset += box[2] - box[0]
 
 
+# From https://github.com/TrueMyst/PillowFontFallback/blob/main/fontfallback/writing.py
 def draw_text(
     draw: ImageDraw.ImageDraw,
     xy: Tuple[int, int],
@@ -204,7 +208,7 @@ def lcm(a: int, b: int) -> int:
     return a * b // gcd(a, b)
 
 
-def fetch_interval_data(station_id: str) -> None:
+def fetch_interval_data(station_id: str, LINK) -> None:
     '''
     Fetch the interval data of a station.
     '''
@@ -219,7 +223,7 @@ def fetch_interval_data(station_id: str) -> None:
             ROUTE_INTERVAL_DATA.put([station_id, [time(), data]])
 
 
-def gen_route_interval() -> None:
+def gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK) -> None:
     '''
     Generate all the interval data.
     '''
@@ -228,7 +232,7 @@ def gen_route_interval() -> None:
 
     threads: list[Thread] = []
     for station_id in data[0]['stations']:
-        t = Thread(target=fetch_interval_data, args=(station_id, ))
+        t = Thread(target=fetch_interval_data, args=(station_id, LINK))
         t.start()
         threads.append(t)
     for t in threads:
@@ -281,7 +285,7 @@ def gen_route_interval() -> None:
             json.dump(freq_dict, f)
 
 
-def fetch_data(link: str) -> str:
+def fetch_data(link: str, LOCAL_FILE_PATH) -> str:
     '''
     Fetch all the route data and station data.
     '''
@@ -306,11 +310,14 @@ def get_distance(a_dict: dict, b_dict: dict, square: bool = False) -> float:
     return sqrt(dist_square)
 
 
-def station_name_to_id(data: list, sta: str) -> str:
+def station_name_to_id(data: list, sta: str, STATION_TABLE) -> str:
     '''
     Convert one station's name to its ID.
     '''
     sta = sta.lower()
+    if sta in STATION_TABLE:
+        sta = STATION_TABLE[sta]
+
     tra1 = OpenCC('s2t').convert(sta)
     sta_try = [sta, tra1, OpenCC('t2jp').convert(tra1)]
 
@@ -400,7 +407,12 @@ def create_graph(data: list, start: str, end: str, IGNORED_LINES: bool,
                  CALCULATE_HIGH_SPEED: bool, CALCULATE_BOAT: bool,
                  CALCULATE_WALKING_WILD: bool, ONLY_LRT: bool,
                  AVOID_STATIONS: list, route_type: RouteType,
-                 original_ignored_lines: list) -> nx.MultiDiGraph:
+                 original_ignored_lines: list,
+                 INTERVAL_PATH: str,
+                 version1: str, version2: str,
+                 LOCAL_FILE_PATH, STATION_TABLE,
+                 WILD_ADDITION, TRANSFER_ADDITION,
+                 MAX_WILD_BLOCKS) -> nx.MultiDiGraph:
     '''
     Create the graph of all routes.
     '''
@@ -466,12 +478,13 @@ def create_graph(data: list, start: str, end: str, IGNORED_LINES: bool,
         with open(LOCAL_FILE_PATH, 'w', encoding='utf-8') as f:
             json.dump(data, f)
 
-    start_station = station_name_to_id(data, start)
-    end_station = station_name_to_id(data, end)
+    start_station = station_name_to_id(data, start, STATION_TABLE)
+    end_station = station_name_to_id(data, end, STATION_TABLE)
     if not (start_station and end_station):
         return nx.MultiDiGraph()
 
-    avoid_ids = [station_name_to_id(data, x) for x in AVOID_STATIONS]
+    avoid_ids = [station_name_to_id(data, x, STATION_TABLE)
+                 for x in AVOID_STATIONS]
 
     all_stations = data[0]['stations']
     G = nx.MultiDiGraph()
@@ -745,14 +758,14 @@ def create_graph(data: list, start: str, end: str, IGNORED_LINES: bool,
     return G
 
 
-def find_shortest_route(G: nx.MultiDiGraph, start: str, end: str,
-                        data: list) -> list[str, int, int, int, list]:
+def find_shortest_route(G: nx.MultiDiGraph, start: str, end: str, data: list,
+                        STATION_TABLE) -> list[str, int, int, int, list]:
     '''
     Find the shortest route between two stations.
     '''
 
-    start_station = station_name_to_id(data, start)
-    end_station = station_name_to_id(data, end)
+    start_station = station_name_to_id(data, start, STATION_TABLE)
+    end_station = station_name_to_id(data, end, STATION_TABLE)
     if not (start_station and end_station):
         return None, None, None, None, None
 
@@ -774,41 +787,6 @@ def find_shortest_route(G: nx.MultiDiGraph, start: str, end: str,
         return False, False, False, False, False
 
     return process_path(G, shortest_path, shortest_distance, data)
-
-
-def find_n_shortest_routes(G: nx.MultiDiGraph, start: str, end: str,
-                           data: list, n: int) -> \
-                            list[str, int, int, int, list]:
-    '''
-    Find n shortest routes between two stations.
-    '''
-
-    start_station = station_name_to_id(data, start)
-    end_station = station_name_to_id(data, end)
-    if not (start_station and end_station):
-        return None, None, None, None, None
-
-    if start_station == end_station:
-        return None, None, None, None, None
-
-    shortest_paths = []
-    shortest_distance = -1
-    try:
-        shortest_paths = list(nx.all_simple_paths(G, start_station,
-                                                  end_station))[:n + 1]
-        shortest_distance = nx.shortest_path_length(G, start_station,
-                                                    end_station,
-                                                    weight='weight')
-    except nx.exception.NetworkXNoPath:
-        return False, False, False, False, False
-    except nx.exception.NodeNotFound:
-        return False, False, False, False, False
-
-    return_list = []
-    for x in shortest_paths:
-        return_list.append(process_path(G, x, shortest_distance, data))
-
-    return return_list
 
 
 def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
@@ -943,7 +921,9 @@ def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
 
 
 def save_image(route_type: RouteType, every_route_time: list,
-               shortest_distance, waiting_time, show=False) -> None:
+               shortest_distance, riding_time, waiting_time,
+               BASE_PATH, version1, version2,
+               DETAIL, PNG_PATH, show=False) -> None:
     '''
     Save the image of the route.
     '''
@@ -1010,13 +990,15 @@ def save_image(route_type: RouteType, every_route_time: list,
 
     pattern.append((ImagePattern.STATION, route_data[1], route_data[2]))
 
-    return generate_image(pattern, shortest_distance,
-                          waiting_time, route_type, show)
+    return generate_image(pattern, shortest_distance, riding_time,
+                          waiting_time, route_type, BASE_PATH,
+                          version1, version2, show)
 
 
 def calculate_height_width(pattern: list[list[ImagePattern]],
                            route_type, final_str: str,
-                           final_str_size: int) -> tuple[int]:
+                           final_str_size: int, BASE_PATH,
+                           version1, version2) -> tuple[int]:
     '''
     Calculate the width and the height of the image.
     '''
@@ -1053,7 +1035,8 @@ def calculate_height_width(pattern: list[list[ImagePattern]],
     return (width + 10, height)
 
 
-def generate_image(pattern, shortest_distance, waiting_time, route_type,
+def generate_image(pattern, shortest_distance, riding_time, waiting_time,
+                   route_type, BASE_PATH, version1, version2,
                    show: bool = False):
     '''
     Generate the image with PIL.
@@ -1073,7 +1056,7 @@ def generate_image(pattern, shortest_distance, waiting_time, route_type,
     fonts = load_fonts(*font_list)
     gm_full = gmtime(shortest_distance)
     gm_waiting = gmtime(waiting_time)
-    gm_travelling = gmtime(shortest_distance - waiting_time)
+    gm_travelling = gmtime(riding_time)
     full_time = str(strftime('%H:%M:%S', gm_full))
     waiting_time = str(strftime('%H:%M:%S', gm_waiting))
     travelling_time = str(strftime('%H:%M:%S', gm_travelling))
@@ -1093,7 +1076,8 @@ def generate_image(pattern, shortest_distance, waiting_time, route_type,
 
     image = Image.new('RGB',
                       calculate_height_width(pattern, route_type,
-                                             final_str, final_str_size),
+                                             final_str, final_str_size,
+                                             BASE_PATH, version1, version2),
                       color='white')
     draw = ImageDraw.Draw(image)
 
@@ -1187,66 +1171,88 @@ def generate_image(pattern, shortest_distance, waiting_time, route_type,
     return base64_str
 
 
-def main():
-    global LINK, IGNORED_LINES, version1, version2, \
-        LOCAL_FILE_PATH, INTERVAL_PATH, BASE_PATH, PNG_PATH
+def main(station1: str, station2: str, LINK: str,
+         LOCAL_FILE_PATH, INTERVAL_PATH, BASE_PATH, PNG_PATH,
+         MAX_WILD_BLOCKS: int = 1500,
+         TRANSFER_ADDITION: dict[str, list[str]] = {},
+         WILD_ADDITION: dict[str, list[str]] = {},
+         STATION_TABLE: dict[str, str] = {},
+         ORIGINAL_IGNORED_LINES: list = [], UPDATE_DATA: bool = False,
+         GEN_ROUTE_INTERVAL: bool = False, IGNORED_LINES: list = [],
+         AVOID_STATIONS: list = [],
+         CALCULATE_HIGH_SPEED: bool = True, CALCULATE_BOAT: bool = True,
+         CALCULATE_WALKING_WILD: bool = False,
+         ONLY_LRT: bool = False, DETAIL: bool = False):
+    '''
+    Main function. You can call it in your own code.
+    '''
     IGNORED_LINES += ORIGINAL_IGNORED_LINES
+    STATION_TABLE = {x.lower(): y.lower() for x, y in STATION_TABLE.items()}
     if LINK.endswith('/index.html'):
         LINK = LINK.rstrip('/index.html')
 
-    link_hash = hashlib.md5(LINK.encode('utf-8')).hexdigest()
-    LOCAL_FILE_PATH = f'mtr-station-data-{link_hash}.json'
-    INTERVAL_PATH = f'mtr-route-data-{link_hash}.json'
-    BASE_PATH = 'mtr_pathfinder_data'
-    PNG_PATH = BASE_PATH
-
     if UPDATE_DATA is True or (not os.path.exists(LOCAL_FILE_PATH)):
-        data = fetch_data(LINK)
+        data = fetch_data(LINK, LOCAL_FILE_PATH)
     else:
         with open(LOCAL_FILE_PATH) as f:
             data = json.load(f)
 
     if GEN_ROUTE_INTERVAL is True or (not os.path.exists(INTERVAL_PATH)):
-        gen_route_interval()
+        gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK)
 
     version1 = strftime('%Y%m%d-%H%M',
                         gmtime(os.path.getmtime(LOCAL_FILE_PATH)))
     version2 = strftime('%Y%m%d-%H%M',
                         gmtime(os.path.getmtime(INTERVAL_PATH)))
 
+    route_type = RouteType.WAITING
     G = create_graph(data, station1, station2, IGNORED_LINES,
                      CALCULATE_HIGH_SPEED,
                      CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT,
-                     AVOID_STATIONS, RouteType.WAITING, ORIGINAL_IGNORED_LINES)
+                     AVOID_STATIONS, route_type, ORIGINAL_IGNORED_LINES,
+                     INTERVAL_PATH, version1, version2, LOCAL_FILE_PATH,
+                     STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION,
+                     MAX_WILD_BLOCKS)
     shortest_path, shortest_distance, waiting_time, riding_time, ert = \
-        find_shortest_route(G, station1, station2, data)
+        find_shortest_route(G, station1, station2, data, STATION_TABLE)
 
     if shortest_path is False:
         print('找不到路线！')
+        return shortest_path
     elif shortest_path is None:
         print('车站输入错误，请重新输入！')
+        return shortest_path
     else:
-        save_image(RouteType.WAITING, ert, shortest_distance, waiting_time,
-                   show=True)
+        b64 = save_image(route_type, ert, shortest_distance, riding_time,
+                         waiting_time, BASE_PATH, version1, version2, DETAIL,
+                         PNG_PATH, show=True)
+        return b64
 
 
-if __name__ == '__main__':
+def run():
     # 地图设置
     # 在线线路图网址，结尾删除"/"
     LINK: str = ''
     # 从A站到B站，非出站换乘（越野）的最远步行距离，默认值为1500
     MAX_WILD_BLOCKS: int = 1500
-    # 实际跑车的线路如果是隐藏线路，其对应的在地图上显示的线路
-    # "隐藏线路: 地图上显示的线路, ..."
-    TRANSLATE_TABLE: dict[str, str] = {}
     # 手动增加出站换乘
     # "车站: [出站换乘的车站, ...], ..."
     TRANSFER_ADDITION: dict[str, list[str]] = {}
     # 手动增加非出站换乘（越野）
     # "车站: [非出站换乘的车站, ...], ..."
     WILD_ADDITION: dict[str, list[str]] = {}
+    # 车站名称映射
+    # "车站昵称: 车站实际名称, ..."
+    STATION_TABLE: dict[str, str] = {}
     # 禁止乘坐的路线（未开通的路线）
     ORIGINAL_IGNORED_LINES: list = []
+
+    link_hash = hashlib.md5(LINK.encode('utf-8')).hexdigest()
+    # 文件设置
+    LOCAL_FILE_PATH = f'mtr-station-data-{link_hash}.json'
+    INTERVAL_PATH = f'mtr-route-data-{link_hash}.json'
+    BASE_PATH = 'mtr_pathfinder_data'
+    PNG_PATH = 'mtr_pathfinder_data'
 
     # 是否更新车站数据
     UPDATE_DATA: bool = False
@@ -1273,4 +1279,13 @@ if __name__ == '__main__':
     station1 = ''
     station2 = ''
 
-    main()
+    main(station1, station2, LINK, LOCAL_FILE_PATH, INTERVAL_PATH,
+         BASE_PATH, PNG_PATH, MAX_WILD_BLOCKS,
+         TRANSFER_ADDITION, WILD_ADDITION, STATION_TABLE,
+         ORIGINAL_IGNORED_LINES, UPDATE_DATA, GEN_ROUTE_INTERVAL,
+         IGNORED_LINES, AVOID_STATIONS, CALCULATE_HIGH_SPEED,
+         CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT, DETAIL)
+
+
+if __name__ == '__main__':
+    run()
