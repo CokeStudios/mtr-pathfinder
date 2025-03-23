@@ -12,6 +12,7 @@ from typing import Optional, Dict, Literal, Tuple, List, Union
 import base64
 import hashlib
 import json
+import mmap
 import os
 import pickle
 import re
@@ -150,46 +151,45 @@ def draw_text(
 
 
 # From https://github.com/trainline-eu/csa-challenge/blob/2aa0fa55e466692d404d87aa2dcaf5b83bca5920/csa.py
-class Connection:
-    def __init__(self, departure_station_id: str, arrival_station_id: str,
-                 departure_timestamp: int, arrival_timestamp: int,
-                 route_detail):
-        self.departure_station = int('0x' + departure_station_id, 16)
-        self.arrival_station = int('0x' + arrival_station_id, 16)
-        self.departure_timestamp = departure_timestamp
-        self.arrival_timestamp = arrival_timestamp
-        self.riding_time = arrival_timestamp - departure_timestamp
-        self.route_detail = route_detail
-        self.station_count = 1
+# class Connection:
+#     def __init__(self, departure_station_id: str, arrival_station_id: str,
+#                  departure_timestamp: int, arrival_timestamp: int,
+#                  route_detail):
+#         self[0] = int('0x' + departure_station_id, 16)
+#         self[1] = int('0x' + arrival_station_id, 16)
+#         self[2] = departure_timestamp
+#         self[3] = arrival_timestamp
+#         self.riding_time = arrival_timestamp - departure_timestamp
+#         self[4] = route_detail
+#         self.station_count = 1
 
-    def __str__(self):
-        return ' '.join([str(x) for x in
-                         (self.route_detail,
-                          self.departure_station, self.arrival_station,
-                          self.departure_timestamp, self.arrival_timestamp,
-                          self.station_count)])
+#     def __str__(self):
+#         return ' '.join([str(x) for x in
+#                          (self[4],
+#                           self[0], self[1],
+#                           self[2], self[3],
+#                           self.station_count)])
 
 
 # From https://github.com/trainline-eu/csa-challenge/blob/2aa0fa55e466692d404d87aa2dcaf5b83bca5920/csa.py
 class CSA:
-    def __init__(self, max_stations, connections: list[Connection]):
+    def __init__(self, max_stations, connections: list[tuple]):
         self.in_connection = array('L')
         self.earliest_arrival = array('L')
         self.max_stations = max_stations
-        self.connections: list[Connection] = connections
+        self.connections: list[tuple] = connections
 
     def main_loop(self, arrival_station):
         earliest = MAX_INT
         for i, c in enumerate(self.connections):
-            if c.departure_timestamp >= self.earliest_arrival[c.departure_station] \
-                    and c.arrival_timestamp < self.earliest_arrival[c.arrival_station]:
-                self.earliest_arrival[c.arrival_station] = c.arrival_timestamp
-                self.in_connection[c.arrival_station] = i
+            if c[2] >= self.earliest_arrival[c[0]] and c[3] < self.earliest_arrival[c[1]]:
+                self.earliest_arrival[c[1]] = c[3]
+                self.in_connection[c[1]] = i
 
-                if c.arrival_station == arrival_station:
-                    earliest = min(earliest, c.arrival_timestamp)
+                if c[1] == arrival_station:
+                    earliest = min(earliest, c[3])
 
-            elif c.departure_timestamp >= earliest:
+            elif c[2] >= earliest:
                 return
 
     def find_path(self, arrival_station):
@@ -199,13 +199,13 @@ class CSA:
             while last_connection_index != MAX_INT:
                 connection = self.connections[last_connection_index]
                 route.append(connection)
-                last_connection_index = self.in_connection[connection.departure_station]
+                last_connection_index = self.in_connection[connection[0]]
 
             route.reverse()
 
         return route
 
-    def compute(self, departure_station, arrival_station, departure_time) -> list[Connection]:
+    def compute(self, departure_station, arrival_station, departure_time) -> list[tuple]:
         self.in_connection = array('L', [MAX_INT for _ in range(self.max_stations)])
         self.earliest_arrival = array('L', [MAX_INT for _ in range(self.max_stations)])
         self.earliest_arrival[departure_station] = departure_time
@@ -439,6 +439,29 @@ def station_num_to_name(data: dict, sta: str) -> str:
             return station['name']
 
 
+def sta_id(station: str) -> int:
+    return int('0x' + station, 16)
+
+
+def load_tt(timetable: list, dep_data: dict, tt_dict: dict[tuple]):
+    for route_id, departures in dep_data.items():
+        if route_id not in tt_dict:
+            continue
+
+        tt = tt_dict[route_id]
+        for departure in departures:
+            if departure < 0:
+                continue
+
+            for t in tt:
+                _t = list(t)
+                _t[2] += departure
+                _t[3] += departure
+                timetable.append(_t)
+
+    timetable.sort(key=lambda x: x[2])  # IMPORTANT !!!
+
+
 def gen_timetable(data: dict, start: str, end: str, IGNORED_LINES: bool,
                   CALCULATE_HIGH_SPEED: bool, CALCULATE_BOAT: bool,
                   CALCULATE_WALKING_WILD: bool, ONLY_LRT: bool,
@@ -446,7 +469,7 @@ def gen_timetable(data: dict, start: str, end: str, IGNORED_LINES: bool,
                   original_ignored_lines: list,
                   DEP_PATH: str, version1: str, version2: str,
                   STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION,
-                  departure_time) -> list[Connection]:
+                  departure_time) -> list[tuple]:
     '''
     Generate the timetable of all routes.
     '''
@@ -458,7 +481,7 @@ def gen_timetable(data: dict, start: str, end: str, IGNORED_LINES: bool,
     if not (start_station and end_station):
         return []
 
-    timetable: list[Connection] = []
+    timetable: list[tuple] = []
     # 添加起点出站换乘
     ss = data['stations'][start_station]['station']
     connections = data['stations'][start_station]['connections']
@@ -472,8 +495,9 @@ def gen_timetable(data: dict, start: str, end: str, IGNORED_LINES: bool,
         dist = data['transfer_dist'][start_station][con]
         con = data['stations'][con]['station']
         timetable.append(
-            [ss, con, departure_time, departure_time + t2,
-             [f'出站换乘步行 Walk {round(dist, 2)}m', '']])
+            (sta_id(ss), sta_id(con),
+             departure_time, departure_time + t2,
+             [f'出站换乘步行 Walk {round(dist, 2)}m', '']))
 
     if CALCULATE_WALKING_WILD is True:
         # 添加起点非出站换乘（越野）
@@ -491,8 +515,12 @@ def gen_timetable(data: dict, start: str, end: str, IGNORED_LINES: bool,
             dist = data['transfer_dist'][start_station][con]
             con = data['stations'][con]['station']
             timetable.append(
-                [ss, con, departure_time, departure_time + t2,
-                 [f'步行 Walk {round(dist, 2)}m', '']])
+                (sta_id(ss), sta_id(con),
+                 departure_time, departure_time + t2,
+                 [f'步行 Walk {round(dist, 2)}m', '']))
+
+    with open(DEP_PATH, 'r', encoding='utf-8') as f:
+        dep_data: dict[str, list[int]] = json.load(f)
 
     filename = ''
     if IGNORED_LINES == original_ignored_lines and \
@@ -502,20 +530,20 @@ def gen_timetable(data: dict, start: str, end: str, IGNORED_LINES: bool,
             f'{int(CALCULATE_HIGH_SPEED)}{int(CALCULATE_WALKING_WILD)}' + \
             f'-{version1}-{version2}.dat'
         if os.path.exists(filename):
-            with open(filename, 'rb') as f:
-                timetable_cache: list[Connection] = pickle.load(f)
+            with open(filename, 'r+b') as f:
+                mmapped_file = mmap.mmap(f.fileno(), 0)
+                timetable_cache: list[tuple] = pickle.load(mmapped_file)
 
-            return [Connection(*x) for x in timetable + timetable_cache]
-
-    with open(DEP_PATH, 'r', encoding='utf-8') as f:
-        dep_data: dict[str, list[int]] = json.load(f)
+            load_tt(timetable, dep_data, timetable_cache)
+            return timetable
 
     avoid_ids = [station_name_to_id(data, x, STATION_TABLE)
                  for x in AVOID_STATIONS]
 
     # 添加普通路线
     TEMP_IGNORED_LINES = [x.lower() for x in IGNORED_LINES]
-    for route_id, departures in dep_data.items():
+    tt_dict = {}
+    for route_id in dep_data.keys():
         if route_id not in data['routes']:
             continue
 
@@ -543,7 +571,6 @@ def gen_timetable(data: dict, start: str, end: str, IGNORED_LINES: bool,
         real_ids = [x['id'] for x in route['stations']]
         dwells = [x['dwellTime'] for x in route['stations']]
         durations = route['durations']
-        departures = departures + [x + 86400 for x in departures]
         dep = 0
         tt = []
         for i in range(len(station_ids) - 1):
@@ -553,8 +580,9 @@ def gen_timetable(data: dict, start: str, end: str, IGNORED_LINES: bool,
             if station1 not in avoid_ids and station2 not in avoid_ids and \
                     station1 != station2:
                 arr_time = dep + dur
-                tt.append([station1, station2, dep, arr_time,
-                           [route_id, route['stations'][-1]['id']]])
+                tt.append((sta_id(station1), sta_id(station2),
+                           dep, arr_time,
+                           [route_id, route['stations'][-1]['id']]))
 
             # 添加出站换乘
             _station2 = real_ids[i + 1]
@@ -568,8 +596,9 @@ def gen_timetable(data: dict, start: str, end: str, IGNORED_LINES: bool,
                 t2 = round(data['transfer_time'][_station2][con])
                 dist = data['transfer_dist'][_station2][con]
                 con = data['stations'][con]['station']
-                tt.append([station2, con, arr_time, arr_time + t2,
-                           [f'出站换乘步行 Walk {round(dist, 2)}m', '']])
+                tt.append((sta_id(station2), sta_id(con),
+                           arr_time, arr_time + t2,
+                           [f'出站换乘步行 Walk {round(dist, 2)}m', '']))
 
             if CALCULATE_WALKING_WILD is True:
                 # 添加非出站换乘（越野）
@@ -586,34 +615,27 @@ def gen_timetable(data: dict, start: str, end: str, IGNORED_LINES: bool,
                     t2 = round(data['transfer_time'][_station2][con])
                     dist = data['transfer_dist'][_station2][con]
                     con = data['stations'][con]['station']
-                    tt.append([station2, con, arr_time, arr_time + t2,
-                              [f'步行 Walk {round(dist, 2)}m', '']])
+                    tt.append((sta_id(station2), sta_id(con),
+                               arr_time, arr_time + t2,
+                               [f'步行 Walk {round(dist, 2)}m', '']))
 
             dwell = round(dwells[i + 1] / 1000)
             dep += dur
             dep += dwell
 
-        for departure in departures:
-            if departure < 0:
-                continue
+        tt_dict[route_id] = tt
 
-            for t in tt:
-                _t = list(t)
-                _t[2] += departure
-                _t[3] += departure
-                timetable.append(_t)
-
-    timetable.sort(key=lambda x: x[2])  # IMPORTANT !!!
     if filename != '':
         if not os.path.exists(filename):
             with open(filename, 'wb') as f:
-                pickle.dump(timetable, f)
+                pickle.dump(tt_dict, f)
 
-    return [Connection(*x) for x in timetable]
+    load_tt(timetable, dep_data, tt_dict)
+    return timetable
 
 
-def process_path(result: list[Connection], start: str, end: str, data: dict,
-                 STATION_TABLE) -> list[str, int, int, int, list]:
+def process_path(result: list[tuple], start: str, end: str, data: dict,
+                 detail, STATION_TABLE) -> list[str, int, int, int, list]:
     '''
     Process the path, change it into human readable form.
     '''
@@ -625,33 +647,32 @@ def process_path(result: list[Connection], start: str, end: str, data: dict,
     if start_station == end_station:
         return None, None, None, None, None
 
-    path: list[Connection] = []
+    path: list[tuple] = []
     last_detail: tuple = None
     for con in result:
-        if con.route_detail != last_detail:
+        if con[4] != last_detail or detail is True:
             path.append(con)
         else:
             last_con = path[-1]
-            last_con.arrival_timestamp = con.arrival_timestamp
-            last_con.arrival_station = con.arrival_station
-            last_con.station_count += 1
+            last_con[3] = con[3]
+            last_con[1] = con[1]
 
-        last_detail = con.route_detail
+        last_detail = con[4]
 
     stations = data['stations']
     every_route_time = []
     for x in path:
-        station_1 = x.departure_station
-        station_2 = x.arrival_station
+        station_1 = x[0]
+        station_2 = x[1]
         sta1_name = station_num_to_name(data, station_1).replace('|', ' ')
         sta2_name = station_num_to_name(data, station_2).replace('|', ' ')
-        route_name = x.route_detail[0]
+        route_name = x[4][0]
         if route_name in data['routes']:
             z = data['routes'][route_name]
             route_name = data['routes'][route_name]['name']
             route = (z['number'] + ' ' + route_name.split('||')[0]).strip()
             route = route.replace('|', ' ')
-            terminus_name: str = stations[x.route_detail[1]]['name']
+            terminus_name: str = stations[x[4][1]]['name']
             if terminus_name.count('|') == 0:
                 t1_name = t2_name = terminus_name
             else:
@@ -676,7 +697,7 @@ def process_path(result: list[Connection], start: str, end: str, data: dict,
 
         color = '#' + color
         r = (sta1_name, sta2_name, color, route, terminus,
-             x.departure_timestamp, x.arrival_timestamp, train_type)
+             x[2], x[3], train_type)
         every_route_time.append(r)
 
     return every_route_time
@@ -880,7 +901,7 @@ def main(station1: str, station2: str, LINK: str,
          AVOID_STATIONS: list = [],
          CALCULATE_HIGH_SPEED: bool = True, CALCULATE_BOAT: bool = True,
          CALCULATE_WALKING_WILD: bool = False,
-         ONLY_LRT: bool = False,
+         ONLY_LRT: bool = False, DETAIL: bool = False,
          show=False, departure_time=None) -> Union[str, False, None]:
     '''
     Main function. You can call it in your own code.
@@ -892,7 +913,7 @@ def main(station1: str, station2: str, LINK: str,
     if departure_time is None:
         t1 = datetime.now().replace(year=1970, month=1, day=1).astimezone()
         departure_time = round(t1.timestamp() - timezone)
-        departure_time += 30  # 寻路时间
+        departure_time += 10  # 寻路时间
 
     IGNORED_LINES += ORIGINAL_IGNORED_LINES
     STATION_TABLE = {x.lower(): y.lower() for x, y in STATION_TABLE.items()}
@@ -930,7 +951,8 @@ def main(station1: str, station2: str, LINK: str,
     s1 = int('0x' + data['stations'][s1]['station'], 16)
     s2 = int('0x' + data['stations'][s2]['station'], 16)
     result = csa.compute(s1, s2, departure_time)
-    ert = process_path(result, station1, station2, data, STATION_TABLE)
+    ert = process_path(result, station1, station2,
+                       data, DETAIL, STATION_TABLE)
 
     if ert[0] in [False, None]:
         return ert[0]
@@ -983,6 +1005,11 @@ def run():
     # 仅允许轻轨，默认值为False
     ONLY_LRT: bool = False
 
+    # 出发时间（秒，0-86400），默认值为None，即当前时间后10秒
+    DEP_TIME = None
+    # 输出的图片中是否显示详细信息（每站的到站、出发时间）
+    DETAIL: bool = False
+
     # 出发、到达车站
     station1 = ''
     station2 = ''
@@ -992,7 +1019,8 @@ def run():
          TRANSFER_ADDITION, WILD_ADDITION, STATION_TABLE,
          ORIGINAL_IGNORED_LINES, UPDATE_DATA, GEN_DEPARTURE,
          IGNORED_LINES, AVOID_STATIONS, CALCULATE_HIGH_SPEED,
-         CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT, show=True)
+         CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT, DETAIL,
+         show=True, departure_time=DEP_TIME)
 
 
 if __name__ == '__main__':
