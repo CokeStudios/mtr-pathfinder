@@ -25,15 +25,16 @@ import requests
 
 SERVER_TICK: int = 20
 
-DEFAULT_AVERAGE_SPEED: int = 13     # block/s
-AVERAGE_WALKING_SPEED: int = 3.5    # block/s
-WILD_TRANSFER_SPEED: int = 2.25     # block/s
-WILD_WALKING_SPEED: int = 1.5       # block/s
+DEFAULT_AVERAGE_SPEED: int = 13     # 列车平均速度，单位 block/s
+AVERAGE_WALKING_SPEED: int = 5.612  # 站内换乘速度，单位 block/s
+WILD_TRANSFER_SPEED: int = 4.317    # 出站换乘速度，单位 block/s
+WILD_WALKING_SPEED: int = 2.25      # 非出站换乘（越野）速度，单位 block/s
 
 ROUTE_INTERVAL_DATA = Queue()
 semaphore = BoundedSemaphore(25)
 original = {}
-
+opencc1 = OpenCC('s2t')
+opencc2 = OpenCC('t2jp')
 
 # From https://github.com/TrueMyst/PillowFontFallback/blob/main/fontfallback/writing.py
 def load_fonts(*font_paths: str) -> Dict[str, TTFont]:
@@ -318,8 +319,8 @@ def station_name_to_id(data: list, sta: str, STATION_TABLE) -> str:
     if sta in STATION_TABLE:
         sta = STATION_TABLE[sta]
 
-    tra1 = OpenCC('s2t').convert(sta)
-    sta_try = [sta, tra1, OpenCC('t2jp').convert(tra1)]
+    tra1 = opencc1.convert(sta)
+    sta_try = [sta, tra1, opencc2.convert(tra1)]
 
     stations = data[0]['stations']
     output = ''

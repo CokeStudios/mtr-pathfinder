@@ -7,6 +7,7 @@ from datetime import datetime
 from enum import Enum
 from io import BytesIO
 from math import gcd, sqrt
+from operator import itemgetter
 from time import gmtime, strftime, timezone
 from typing import Optional, Dict, Literal, Tuple, List, Union
 import base64
@@ -23,12 +24,14 @@ from PIL import Image, ImageDraw, ImageFont
 import requests
 
 MAX_INT = 2 ** 64 - 1
-SERVER_TICK: int = 20
+MAX_HOUR = 4
 
-RUNNING_SPEED: int = 3.5            # 站内换乘速度，单位 block/s
-TRANSFER_SPEED: int = 2.25          # 出站换乘速度，单位 block/s
-WILD_WALKING_SPEED: int = 1.5       # 非出站换乘（越野）速度，单位 block/s
+RUNNING_SPEED: int = 5.612          # 站内换乘速度，单位 block/s
+TRANSFER_SPEED: int = 4.317         # 出站换乘速度，单位 block/s
+WILD_WALKING_SPEED: int = 2.25      # 非出站换乘（越野）速度，单位 block/s
 
+opencc1 = OpenCC('s2t')
+opencc2 = OpenCC('t2jp')
 
 # From https://github.com/TrueMyst/PillowFontFallback/blob/main/fontfallback/writing.py
 def load_fonts(*font_paths: str) -> Dict[str, TTFont]:
@@ -111,43 +114,9 @@ def draw_text_v2(
             embedded_color=True,
         )
 
-        draw.text
+        # draw.text
         box = font.getbbox(words[0])
         y_offset += box[2] - box[0]
-
-
-# From https://github.com/TrueMyst/PillowFontFallback/blob/main/fontfallback/writing.py
-def draw_text(
-    draw: ImageDraw.ImageDraw,
-    xy: Tuple[int, int],
-    text: str,
-    color: Tuple[int, int, int],
-    fonts: Dict[str, TTFont],
-    size: int,
-    anchor: Optional[str] = None,
-    align: Literal["left", "center", "right"] = "left",
-    direction: Literal["rtl", "ltr", "ttb"] = "ltr",
-) -> None:
-    """
-    Draws multiple lines of text on an image, handling newline characters and adjusting spacing between lines.
-    """
-    spacing = xy[1]
-    lines = text.split("\n")
-
-    for line in lines:
-        mod_cord = (xy[0], spacing)
-        draw_text_v2(
-            draw,
-            xy=mod_cord,
-            text=line,
-            color=color,
-            fonts=fonts,
-            size=size,
-            anchor=anchor,
-            align=align,
-            direction=direction,
-        )
-        spacing += size + 5
 
 
 # From https://github.com/trainline-eu/csa-challenge/blob/2aa0fa55e466692d404d87aa2dcaf5b83bca5920/csa.py
@@ -171,7 +140,7 @@ def draw_text(
 #                           self.station_count)])
 
 
-# From https://github.com/trainline-eu/csa-challenge/blob/2aa0fa55e466692d404d87aa2dcaf5b83bca5920/csa.py
+# From https://github.com/trainline-eu/csa-challenge/blob/2aa0fa55e466692d404d87aa2dcaf5b83bca5920/csa.py and https://ljn.io/posts/connection-scan-algorithm-with-interchange-time
 class CSA:
     def __init__(self, max_stations, connections: list[tuple]):
         self.in_connection = array('L')
@@ -405,8 +374,8 @@ def station_name_to_id(data: dict, sta: str, STATION_TABLE) -> str:
     if sta in STATION_TABLE:
         sta = STATION_TABLE[sta]
 
-    tra1 = OpenCC('s2t').convert(sta)
-    sta_try = [sta, tra1, OpenCC('t2jp').convert(tra1)]
+    tra1 = opencc1.convert(sta)
+    sta_try = [sta, tra1, opencc2.convert(tra1)]
 
     stations = data['stations']
     output = ''
@@ -443,45 +412,18 @@ def sta_id(station: str) -> int:
     return int('0x' + station, 16)
 
 
-def load_tt(timetable: list, dep_data: dict, tt_dict: dict[tuple]):
-    for route_id, departures in dep_data.items():
-        if route_id not in tt_dict:
-            continue
+def load_tt(tt_dict: dict[tuple], data, start, end, departure_time: int, tz,
+            DEP_PATH, STATION_TABLE, TRANSFER_ADDITION,
+            CALCULATE_WALKING_WILD, WILD_ADDITION):
+    with open(DEP_PATH, 'r', encoding='utf-8') as f:
+        dep_data: dict[str, list[int]] = json.load(f)
 
-        tt = tt_dict[route_id]
-        for departure in departures:
-            if departure < 0:
-                continue
-
-            for t in tt:
-                _t = list(t)
-                _t[2] += departure
-                _t[3] += departure
-                timetable.append(_t)
-
-    timetable.sort(key=lambda x: x[2])  # IMPORTANT !!!
-
-
-def gen_timetable(data: dict, start: str, end: str, IGNORED_LINES: bool,
-                  CALCULATE_HIGH_SPEED: bool, CALCULATE_BOAT: bool,
-                  CALCULATE_WALKING_WILD: bool, ONLY_LRT: bool,
-                  AVOID_STATIONS: list, route_type: RouteType,
-                  original_ignored_lines: list,
-                  DEP_PATH: str, version1: str, version2: str,
-                  STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION,
-                  departure_time) -> list[tuple]:
-    '''
-    Generate the timetable of all routes.
-    '''
-    if not os.path.exists('mtr_pathfinder_temp'):
-        os.makedirs('mtr_pathfinder_temp')
-
+    timetable: list[tuple] = []
     start_station = station_name_to_id(data, start, STATION_TABLE)
     end_station = station_name_to_id(data, end, STATION_TABLE)
     if not (start_station and end_station):
         return []
 
-    timetable: list[tuple] = []
     # 添加起点出站换乘
     ss = data['stations'][start_station]['station']
     connections = data['stations'][start_station]['connections']
@@ -519,6 +461,53 @@ def gen_timetable(data: dict, start: str, end: str, IGNORED_LINES: bool,
                  departure_time, departure_time + t2,
                  [f'步行 Walk {round(dist, 2)}m', '']))
 
+    max_time = departure_time + MAX_HOUR * 60 * 60
+    trips: dict[str, dict[str, int]] = {}
+    trip_no = 0
+    for route_id, departures in dep_data.items():
+        if route_id not in tt_dict:
+            continue
+
+        tt = tt_dict[route_id]
+        for departure in departures:
+            # departure += 15 * 60 * 60  # Seattle -> Beijing
+            if departure >= max_time or \
+                    (max_time > 86400 and departure >= max_time - 86400):
+                break
+
+            trips[str(trip_no)] = {}
+            for t in tt:
+                _t = list(t)
+                _t[2] += departure
+                _t[3] += departure
+                if max_time - 86400 < _t[2] < departure_time:
+                    continue
+
+                timetable.append(_t + [trip_no])
+                if _t[4][1] != '':
+                    trips[str(trip_no)][str(_t[0])] = _t[2]
+
+            trip_no += 1
+
+    # IMPORTANT !!! Connections must be sorted by departure/arrival time.
+    timetable.sort(key=itemgetter(2))
+    return timetable, trips
+
+
+def gen_timetable(data: dict, IGNORED_LINES: bool,
+                  CALCULATE_HIGH_SPEED: bool, CALCULATE_BOAT: bool,
+                  CALCULATE_WALKING_WILD: bool, ONLY_LRT: bool,
+                  AVOID_STATIONS: list, route_type: RouteType,
+                  original_ignored_lines: list, DEP_PATH: str,
+                  version1: str, version2: str,
+                  STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION
+                  ) -> list[tuple]:
+    '''
+    Generate the timetable of all routes.
+    '''
+    if not os.path.exists('mtr_pathfinder_temp'):
+        os.makedirs('mtr_pathfinder_temp')
+
     with open(DEP_PATH, 'r', encoding='utf-8') as f:
         dep_data: dict[str, list[int]] = json.load(f)
 
@@ -532,10 +521,9 @@ def gen_timetable(data: dict, start: str, end: str, IGNORED_LINES: bool,
         if os.path.exists(filename):
             with open(filename, 'r+b') as f:
                 mmapped_file = mmap.mmap(f.fileno(), 0)
-                timetable_cache: list[tuple] = pickle.load(mmapped_file)
+                tt_dict = pickle.load(mmapped_file)
 
-            load_tt(timetable, dep_data, timetable_cache)
-            return timetable
+            return tt_dict
 
     avoid_ids = [station_name_to_id(data, x, STATION_TABLE)
                  for x in AVOID_STATIONS]
@@ -577,8 +565,13 @@ def gen_timetable(data: dict, start: str, end: str, IGNORED_LINES: bool,
             station1 = station_ids[i]
             station2 = station_ids[i + 1]
             dur = round(durations[i] / 1000)
-            if station1 not in avoid_ids and station2 not in avoid_ids and \
-                    station1 != station2:
+            if station1 == station2:
+                dwell = round(dwells[i + 1] / 1000)
+                dep += dur
+                dep += dwell
+                continue
+
+            if station1 not in avoid_ids and station2 not in avoid_ids:
                 arr_time = dep + dur
                 tt.append((sta_id(station1), sta_id(station2),
                            dep, arr_time,
@@ -630,12 +623,12 @@ def gen_timetable(data: dict, start: str, end: str, IGNORED_LINES: bool,
             with open(filename, 'wb') as f:
                 pickle.dump(tt_dict, f)
 
-    load_tt(timetable, dep_data, tt_dict)
-    return timetable
+    return tt_dict
 
 
-def process_path(result: list[tuple], start: str, end: str, data: dict,
-                 detail, STATION_TABLE) -> list[str, int, int, int, list]:
+def process_path(result: list[tuple], start: str, end: str,
+                 trips: dict[str, dict[str, int]], data: dict, detail: bool,
+                 STATION_TABLE) -> list[str, int, int, int, list]:
     '''
     Process the path, change it into human readable form.
     '''
@@ -649,7 +642,29 @@ def process_path(result: list[tuple], start: str, end: str, data: dict,
 
     path: list[tuple] = []
     last_detail: tuple = None
-    for con in result:
+    route_new = []
+    low_i = MAX_INT
+    for i in range(len(result) - 1, -1, -1):
+        if i >= low_i:
+            continue
+
+        new_leg = result[i]
+        trip = trips[str(result[i][5])]
+        for j in range(i - 1, -1, -1):
+            trip_index = str(result[j][0])
+            if trip_index not in trip:
+                continue
+
+            if trip[trip_index] >= result[j][2]:
+                new_leg = [trip_index, result[i][1],
+                           trip[trip_index], result[i][3],
+                           result[i][4], result[i][5]]
+                low_i = j
+
+        route_new.append(new_leg)
+
+    route_new.reverse()
+    for con in route_new:
         if con[4] != last_detail or detail is True:
             path.append(con)
         else:
@@ -779,6 +794,20 @@ def calculate_height_width(pattern: list[list[ImagePattern]],
     return (width + 10, height)
 
 
+def draw_text(draw: ImageDraw.ImageDraw, xy: tuple[int, int], text: str,
+              color: tuple[int, int, int],
+              fonts: list[ImageFont.FreeTypeFont, dict[str, TTFont]],
+              size: int) -> None:
+    for x in text:
+        if ord(x) >= 128:
+            break
+    else:
+        draw.text((xy[0], xy[1] - 7), text, color, fonts[0])  # - 6
+        return
+
+    draw_text_v2(draw, xy, text, color, fonts[1], size)
+
+
 def generate_image(pattern, route_type, BASE_PATH, version1, version2,
                    shortest_distance,
                    show: bool = False) -> tuple[Image.Image, str]:
@@ -797,7 +826,8 @@ def generate_image(pattern, route_type, BASE_PATH, version1, version2,
                     "NotoSansThaiLooped-Regular.ttf",
                  )
                  ]
-    fonts = load_fonts(*font_list)
+    font = ImageFont.FreeTypeFont(font_list[0], 20)
+    fonts = (font, load_fonts(*font_list))
     gm_full = gmtime(shortest_distance)
     full_time = str(strftime('%H:%M:%S', gm_full))
     final_str = f'车站数据版本 Station data version: {version1}'
@@ -901,8 +931,8 @@ def main(station1: str, station2: str, LINK: str,
          AVOID_STATIONS: list = [],
          CALCULATE_HIGH_SPEED: bool = True, CALCULATE_BOAT: bool = True,
          CALCULATE_WALKING_WILD: bool = False,
-         ONLY_LRT: bool = False, DETAIL: bool = False,
-         show=False, departure_time=None) -> Union[str, False, None]:
+         ONLY_LRT: bool = False, DETAIL: bool = False, timetable=None,
+         show=False, departure_time=None, tz=None) -> Union[str, False, None]:
     '''
     Main function. You can call it in your own code.
     Output:
@@ -935,12 +965,16 @@ def main(station1: str, station2: str, LINK: str,
                         gmtime(os.path.getmtime(DEP_PATH)))
 
     route_type = RouteType.REAL_TIME
-    tt = gen_timetable(data, station1, station2, IGNORED_LINES,
-                       CALCULATE_HIGH_SPEED,
-                       CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT,
-                       AVOID_STATIONS, route_type, ORIGINAL_IGNORED_LINES,
-                       DEP_PATH, version1, version2, STATION_TABLE,
-                       WILD_ADDITION, TRANSFER_ADDITION, departure_time)
+    if timetable is None:
+        timetable = gen_timetable(
+            data, IGNORED_LINES, CALCULATE_HIGH_SPEED, CALCULATE_BOAT,
+            CALCULATE_WALKING_WILD, ONLY_LRT, AVOID_STATIONS, route_type,
+            ORIGINAL_IGNORED_LINES, DEP_PATH, version1, version2,
+            STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION)
+
+    tt, trips = load_tt(timetable, data, station1, station2, departure_time,
+                        tz, DEP_PATH, STATION_TABLE, TRANSFER_ADDITION,
+                        CALCULATE_WALKING_WILD, WILD_ADDITION)
 
     csa = CSA(len(data['stations']), tt)
     s1 = station_name_to_id(data, station1, STATION_TABLE)
@@ -951,7 +985,7 @@ def main(station1: str, station2: str, LINK: str,
     s1 = int('0x' + data['stations'][s1]['station'], 16)
     s2 = int('0x' + data['stations'][s2]['station'], 16)
     result = csa.compute(s1, s2, departure_time)
-    ert = process_path(result, station1, station2,
+    ert = process_path(result, station1, station2, trips,
                        data, DETAIL, STATION_TABLE)
 
     if ert[0] in [False, None]:
