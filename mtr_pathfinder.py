@@ -342,7 +342,7 @@ def station_name_to_id(data: dict, sta: str, STATION_TABLE,
     sta_try = [sta, tra1, opencc2.convert(tra1)]
 
     all_names = []
-    stations = data['stations']
+    stations = data[0]['stations']
     output = None
     has_station = False
     for station_id, station_dict in stations.items():
