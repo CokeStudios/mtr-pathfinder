@@ -4,6 +4,7 @@ Find paths between two stations for Minecraft Transit Railway.
 
 from array import array
 from datetime import datetime
+from difflib import SequenceMatcher
 from enum import Enum
 from io import BytesIO
 from math import gcd, sqrt
@@ -32,6 +33,23 @@ WILD_WALKING_SPEED: int = 2.25      # 非出站换乘（越野）速度，单位
 
 opencc1 = OpenCC('s2t')
 opencc2 = OpenCC('t2jp')
+
+
+def get_close_matches(words, possibilities, cutoff=0.2):
+    result = [(-1, None)]
+    s = SequenceMatcher()
+    for word in words:
+        s.set_seq2(word)
+        for x, y in possibilities:
+            s.set_seq1(x)
+            if s.real_quick_ratio() >= cutoff and \
+                    s.quick_ratio() >= cutoff:
+                ratio = s.ratio()
+                if ratio >= cutoff:
+                    result.append((ratio, y))
+
+    return max(result)[1]
+
 
 # From https://github.com/TrueMyst/PillowFontFallback/blob/main/fontfallback/writing.py
 def load_fonts(*font_paths: str) -> Dict[str, TTFont]:
@@ -348,12 +366,12 @@ def gen_departure(link: str, DEP_PATH) -> None:
     for x in departures:
         dep_list = set()
         for y in x['departures']:
+            # deviation = y['deviation']
             for z in y['departures']:
+                # dep = round((z + deviation) / 1000)
                 dep = round(z / 1000)
-                if dep < 0:
+                while dep < 0:
                     dep += 86400
-                    if dep < 0:
-                        dep += 86400
 
                 dep_list.add(dep)
 
@@ -366,7 +384,8 @@ def gen_departure(link: str, DEP_PATH) -> None:
             json.dump(dep_dict, f)
 
 
-def station_name_to_id(data: dict, sta: str, STATION_TABLE) -> str:
+def station_name_to_id(data: dict, sta: str, STATION_TABLE,
+                       fuzzy_compare=True) -> str:
     '''
     Convert one station's name to its ID.
     '''
@@ -377,11 +396,13 @@ def station_name_to_id(data: dict, sta: str, STATION_TABLE) -> str:
     tra1 = opencc1.convert(sta)
     sta_try = [sta, tra1, opencc2.convert(tra1)]
 
+    all_names = []
     stations = data['stations']
-    output = ''
+    output = None
     has_station = False
     for station_id, station_dict in stations.items():
         s_1 = station_dict['name']
+        all_names.append((s_1, station_id))
         s_split = station_dict['name'].split('|')
         s_2_2 = s_split[-1]
         s_2 = s_2_2.split('/')[-1]
@@ -392,8 +413,8 @@ def station_name_to_id(data: dict, sta: str, STATION_TABLE) -> str:
                 output = station_id
                 break
 
-    if has_station is False:
-        return None
+    if has_station is False and fuzzy_compare is True:
+        return get_close_matches(sta_try, all_names)
 
     return output
 
@@ -412,9 +433,10 @@ def sta_id(station: str) -> int:
     return int('0x' + station, 16)
 
 
-def load_tt(tt_dict: dict[tuple], data, start, end, departure_time: int, tz,
-            DEP_PATH, STATION_TABLE, TRANSFER_ADDITION,
+def load_tt(tt_dict: dict[tuple], data, start, end, departure_time: int,
+            tz_offset: float, DEP_PATH, STATION_TABLE, TRANSFER_ADDITION,
             CALCULATE_WALKING_WILD, WILD_ADDITION):
+    tz_offset = int(tz_offset * 60 * 60)
     with open(DEP_PATH, 'r', encoding='utf-8') as f:
         dep_data: dict[str, list[int]] = json.load(f)
 
@@ -468,9 +490,15 @@ def load_tt(tt_dict: dict[tuple], data, start, end, departure_time: int, tz,
         if route_id not in tt_dict:
             continue
 
+        if tz_offset > 0:
+            departures += [x + 86400 for x in departures if x <= tz_offset]
+        elif tz_offset < 0:
+            departures = [x - 86400 for x in departures
+                          if x >= 86400 - tz_offset] + departures
+
         tt = tt_dict[route_id]
         for departure in departures:
-            # departure += 15 * 60 * 60  # Seattle -> Beijing
+            departure += tz_offset
             if departure >= max_time or \
                     (max_time > 86400 and departure >= max_time - 86400):
                 break
@@ -554,11 +582,14 @@ def gen_timetable(data: dict, IGNORED_LINES: bool,
         if ONLY_LRT and route['type'] != 'train_light_rail':
             continue
 
+        durations = route['durations']
+        if durations == []:
+            continue
+
         station_ids = [data['stations'][x['id']]['station']
                        for x in route['stations']]
         real_ids = [x['id'] for x in route['stations']]
         dwells = [x['dwellTime'] for x in route['stations']]
-        durations = route['durations']
         dep = 0
         tt = []
         for i in range(len(station_ids) - 1):
@@ -649,16 +680,19 @@ def process_path(result: list[tuple], start: str, end: str,
             continue
 
         new_leg = result[i]
-        trip = trips[str(result[i][5])]
+        if len(new_leg) < 6:
+            route_new.append(new_leg)
+            continue
+
+        trip = trips[str(new_leg[5])]
         for j in range(i - 1, -1, -1):
             trip_index = str(result[j][0])
             if trip_index not in trip:
                 continue
 
             if trip[trip_index] >= result[j][2]:
-                new_leg = [trip_index, result[i][1],
-                           trip[trip_index], result[i][3],
-                           result[i][4], result[i][5]]
+                new_leg = [trip_index, new_leg[1], trip[trip_index],
+                           new_leg[3], new_leg[4], new_leg[5]]
                 low_i = j
 
         route_new.append(new_leg)
@@ -932,7 +966,7 @@ def main(station1: str, station2: str, LINK: str,
          CALCULATE_HIGH_SPEED: bool = True, CALCULATE_BOAT: bool = True,
          CALCULATE_WALKING_WILD: bool = False,
          ONLY_LRT: bool = False, DETAIL: bool = False, timetable=None,
-         show=False, departure_time=None, tz=None) -> Union[str, False, None]:
+         show=False, departure_time=None, tz=0) -> Union[str, False, None]:
     '''
     Main function. You can call it in your own code.
     Output:

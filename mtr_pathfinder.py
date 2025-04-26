@@ -2,6 +2,7 @@
 Find paths between two stations for Minecraft Transit Railway.
 '''
 
+from difflib import SequenceMatcher
 from enum import Enum
 from io import BytesIO
 from math import gcd, sqrt
@@ -35,6 +36,23 @@ semaphore = BoundedSemaphore(25)
 original = {}
 opencc1 = OpenCC('s2t')
 opencc2 = OpenCC('t2jp')
+
+
+def get_close_matches(words, possibilities, cutoff=0.45):
+    result = [(-1, None)]
+    s = SequenceMatcher()
+    for word in words:
+        s.set_seq2(word)
+        for x, y in possibilities:
+            s.set_seq1(x)
+            if s.real_quick_ratio() >= cutoff and \
+                    s.quick_ratio() >= cutoff:
+                ratio = s.ratio()
+                if ratio >= cutoff:
+                    result.append((ratio, y))
+
+    return max(result)[1]
+
 
 # From https://github.com/TrueMyst/PillowFontFallback/blob/main/fontfallback/writing.py
 def load_fonts(*font_paths: str) -> Dict[str, TTFont]:
@@ -311,7 +329,8 @@ def get_distance(a_dict: dict, b_dict: dict, square: bool = False) -> float:
     return sqrt(dist_square)
 
 
-def station_name_to_id(data: list, sta: str, STATION_TABLE) -> str:
+def station_name_to_id(data: dict, sta: str, STATION_TABLE,
+                       fuzzy_compare=True) -> str:
     '''
     Convert one station's name to its ID.
     '''
@@ -322,11 +341,13 @@ def station_name_to_id(data: list, sta: str, STATION_TABLE) -> str:
     tra1 = opencc1.convert(sta)
     sta_try = [sta, tra1, opencc2.convert(tra1)]
 
-    stations = data[0]['stations']
-    output = ''
+    all_names = []
+    stations = data['stations']
+    output = None
     has_station = False
-    for station, station_dict in stations.items():
+    for station_id, station_dict in stations.items():
         s_1 = station_dict['name']
+        all_names.append((s_1, station_id))
         s_split = station_dict['name'].split('|')
         s_2_2 = s_split[-1]
         s_2 = s_2_2.split('/')[-1]
@@ -334,11 +355,11 @@ def station_name_to_id(data: list, sta: str, STATION_TABLE) -> str:
         for st in sta_try:
             if st in (s_1.lower(), s_2.lower(), s_2_2.lower(), s_3.lower()):
                 has_station = True
-                output = station
+                output = station_id
                 break
 
-    if has_station is False:
-        return None
+    if has_station is False and fuzzy_compare is True:
+        return get_close_matches(sta_try, all_names)
 
     return output
 
