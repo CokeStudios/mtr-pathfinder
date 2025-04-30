@@ -329,7 +329,7 @@ def get_distance(a_dict: dict, b_dict: dict, square: bool = False) -> float:
     return sqrt(dist_square)
 
 
-def station_name_to_id(data: dict, sta: str, STATION_TABLE,
+def station_name_to_id(data: list, sta: str, STATION_TABLE,
                        fuzzy_compare=True) -> str:
     '''
     Convert one station's name to its ID.
