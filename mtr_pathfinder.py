@@ -27,8 +27,8 @@ import requests
 SERVER_TICK: int = 20
 
 DEFAULT_AVERAGE_SPEED: int = 13     # 列车平均速度，单位 block/s
-AVERAGE_WALKING_SPEED: int = 5.612  # 站内换乘速度，单位 block/s
-WILD_TRANSFER_SPEED: int = 4.317    # 出站换乘速度，单位 block/s
+RUNNING_SPEED: int = 5.612          # 站内换乘速度，单位 block/s
+TRANSFER_SPEED: int = 4.317         # 出站换乘速度，单位 block/s
 WILD_WALKING_SPEED: int = 2.25      # 非出站换乘（越野）速度，单位 block/s
 
 ROUTE_INTERVAL_DATA = Queue()
@@ -304,12 +304,58 @@ def gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK) -> None:
             json.dump(freq_dict, f)
 
 
-def fetch_data(link: str, LOCAL_FILE_PATH) -> str:
+def fetch_data(link: str, LOCAL_FILE_PATH, MTR_VER) -> str:
     '''
     Fetch all the route data and station data.
     '''
-    link = link.rstrip('/') + '/data'
-    data = requests.get(link).json()
+    if MTR_VER == 3:
+        link = link.rstrip('/') + '/data'
+        data = requests.get(link).json()
+    else:
+        link = link.rstrip('/') + \
+            '/mtr/api/map/stations-and-routes?dimension=0'
+        data = requests.get(link).json()['data']
+
+        data_new = {'routes': [], 'stations': {}}
+        i = 0
+        for d in data['stations']:
+            d['station'] = hex(i)[2:]
+            data_new['stations'][d['id']] = d
+            i += 1
+        
+        x_dict = {x['id']: [] for x in data['stations']}
+        z_dict = {x['id']: [] for x in data['stations']}
+        for route in data['routes']:
+            if route['circularState'] == 'CLOCKWISE':
+                route['circular'] = 'cw'
+            elif route['circularState'] == 'ANTICLOCKWISE':
+                route['circular'] = 'ccw'
+            else:
+                route['circular'] = ''
+
+            route['durations'] = [round(x / 1000) for x in route['durations']]
+            for station in route['stations']:
+                x_dict[station['id']] += [station['x']]
+                z_dict[station['id']] += [station['z']]
+
+            route['stations'] = [f'{x}_{route["color"]}'
+                                 for x in route['stations']]
+
+            data_new['routes'].append(route)
+
+        for station in data['stations']:
+            x_list = x_dict[station['id']]
+            z_list = z_dict[station['id']]
+            if len(x_list) == 0:
+                continue
+
+            data_new['stations'][station['id']]['x'] = \
+                sum(x_list) / len(x_list)
+            data_new['stations'][station['id']]['z'] = \
+                sum(z_list) / len(z_list)
+
+        data = [data_new]
+
     y = input(f'是否替换{LOCAL_FILE_PATH}文件? (Y/N) ').lower()
     if y == 'y':
         with open(LOCAL_FILE_PATH, 'w', encoding='utf-8') as f:
@@ -365,11 +411,16 @@ def station_name_to_id(data: list, sta: str, STATION_TABLE,
 
 
 def get_route_station_index(route: dict,
-                            station_1_id: str, station_2_id: str) -> tuple:
+                            station_1_id: str, station_2_id: str,
+                            MTR_VER = 3) -> tuple:
     '''
     Get the index of the two stations in one route.
     '''
-    st = [x.split('_')[0] for x in route['stations']]
+    if MTR_VER == 3:
+        st = [x.split('_')[0] for x in route['stations']]
+    else:
+        st = [x['id'] for x in route['stations']]
+
     check_station_2 = False
     for i, station in enumerate(st):
         if station == station_1_id:
@@ -385,10 +436,14 @@ def get_route_station_index(route: dict,
 
 
 def get_approximated_time(route: dict, station_1_id: str, station_2_id: str,
-                          data: list, tick: bool = False) -> float:
+                          data: list, tick: bool = False,
+                          MTR_VER = 3) -> float:
     '''
     Get the approximated time of the two stations in one route.
     '''
+    if MTR_VER == 4:
+        return get_app_time_v4(route, station_1_id, station_2_id, tick)
+
     index1, index2 = get_route_station_index(route,
                                              station_1_id, station_2_id)
     if index2 is None:
@@ -422,6 +477,32 @@ def get_approximated_time(route: dict, station_1_id: str, station_2_id: str,
 
     if tick is True:
         t *= 20
+
+    return t
+
+
+def get_app_time_v4(route: dict, station_1_id: str, station_2_id: str,
+                    tick: bool = False) -> float:
+    '''
+    Get the approximated time of the two stations in one route.
+    '''
+    index1, index2 = get_route_station_index(route,
+                                             station_1_id, station_2_id, 4)
+    if index2 is None:
+        return None
+
+    t = 0
+    stations = route['stations'][index1:index2 + 1]
+    for i, station_1 in enumerate(stations):
+        try:
+            station_2 = stations[i + 1]
+        except IndexError:
+            break
+        t += get_distance(station_1, station_2) / DEFAULT_AVERAGE_SPEED
+
+    if tick is True:
+        t *= 20
+
     return t
 
 
@@ -434,7 +515,7 @@ def create_graph(data: list, start: str, end: str, IGNORED_LINES: bool,
                  version1: str, version2: str,
                  LOCAL_FILE_PATH, STATION_TABLE,
                  WILD_ADDITION, TRANSFER_ADDITION,
-                 MAX_WILD_BLOCKS) -> nx.MultiDiGraph:
+                 MAX_WILD_BLOCKS, MTR_VER) -> nx.MultiDiGraph:
     '''
     Create the graph of all routes.
     '''
@@ -480,7 +561,7 @@ def create_graph(data: list, start: str, end: str, IGNORED_LINES: bool,
                 station_1 = stations[it1].split('_')[0]
                 station_2 = stations[it2].split('_')[0]
                 app_time = get_approximated_time(route, station_1, station_2,
-                                                 data, True)
+                                                 data, True, MTR_VER)
                 if app_time == 0:
                     app_time = 0.01
                 new_dur.append(app_time)
@@ -529,7 +610,7 @@ def create_graph(data: list, start: str, end: str, IGNORED_LINES: bool,
 
             transfer_dict = all_stations[transfer]
             dist = get_distance(station_dict, transfer_dict)
-            duration = dist / AVERAGE_WALKING_SPEED
+            duration = dist / TRANSFER_SPEED
 
             if (station, transfer) in edges_attr_dict:
                 edges_attr_dict[(station, transfer)].append(
@@ -560,11 +641,11 @@ def create_graph(data: list, start: str, end: str, IGNORED_LINES: bool,
                                 if wild is True:
                                     dist = get_distance(station_dict,
                                                         station2_dict)
-                                    duration = dist / WILD_TRANSFER_SPEED
+                                    duration = dist / WILD_WALKING_SPEED
                                 else:
                                     dist = get_distance(station_dict,
                                                         station2_dict)
-                                    duration = dist / AVERAGE_WALKING_SPEED
+                                    duration = dist / TRANSFER_SPEED
 
                                 if (station, station2) in edges_attr_dict:
                                     edges_attr_dict[(station, station2)] \
@@ -634,7 +715,7 @@ def create_graph(data: list, start: str, end: str, IGNORED_LINES: bool,
 
                 if 0 in dur_list:
                     t = get_approximated_time(route, station_1, station_2,
-                                              data)
+                                              data, MTR_VER)
                     if t is None:
                         continue
                     dur = t
@@ -672,7 +753,7 @@ def create_graph(data: list, start: str, end: str, IGNORED_LINES: bool,
             #     add_edge = False
             #     if duration == 0:
             #         t = get_approximated_time(route, station_1, station_2,
-            #                                   data)
+            #                                   data, MTR_VER)
             #         if t is not None:
             #             add_edge = True
             #     else:
@@ -1204,7 +1285,7 @@ def main(station1: str, station2: str, LINK: str,
          AVOID_STATIONS: list = [],
          CALCULATE_HIGH_SPEED: bool = True, CALCULATE_BOAT: bool = True,
          CALCULATE_WALKING_WILD: bool = False,
-         ONLY_LRT: bool = False, DETAIL: bool = False,
+         ONLY_LRT: bool = False, DETAIL: bool = False, MTR_VER: int = 3,
          show=False) -> Union[tuple[Image.Image, str], False, None]:
     '''
     Main function. You can call it in your own code.
@@ -1215,18 +1296,26 @@ def main(station1: str, station2: str, LINK: str,
     (image object, base64 str of the generated image)
     (图片对象, 生成图片的 base64 字符串)
     '''
+    if MTR_VER not in [3, 4]:
+        raise NotImplementedError('MTR_VER should be 3 or 4')
+
     IGNORED_LINES += ORIGINAL_IGNORED_LINES
     STATION_TABLE = {x.lower(): y.lower() for x, y in STATION_TABLE.items()}
     if LINK.endswith('/index.html'):
         LINK = LINK.rstrip('/index.html')
 
     if UPDATE_DATA is True or (not os.path.exists(LOCAL_FILE_PATH)):
-        data = fetch_data(LINK, LOCAL_FILE_PATH)
+        data = fetch_data(LINK, LOCAL_FILE_PATH, MTR_VER)
     else:
         with open(LOCAL_FILE_PATH) as f:
             data = json.load(f)
 
     if GEN_ROUTE_INTERVAL is True or (not os.path.exists(INTERVAL_PATH)):
+        if MTR_VER == 4:
+            raise NotImplementedError(
+                'Please use the real-time pathfinder for MTR 4.0.0 '
+                'or input interval data manually.')
+
         gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK)
 
     version1 = strftime('%Y%m%d-%H%M',
@@ -1241,7 +1330,7 @@ def main(station1: str, station2: str, LINK: str,
                      AVOID_STATIONS, route_type, ORIGINAL_IGNORED_LINES,
                      INTERVAL_PATH, version1, version2, LOCAL_FILE_PATH,
                      STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION,
-                     MAX_WILD_BLOCKS)
+                     MAX_WILD_BLOCKS, MTR_VER)
     shortest_path, shortest_distance, waiting_time, riding_time, ert = \
         find_shortest_route(G, station1, station2, data, STATION_TABLE)
 
@@ -1255,6 +1344,8 @@ def main(station1: str, station2: str, LINK: str,
 
 def run():
     # 地图设置
+    # MTR模组版本（3/4），默认值为3
+    MTR_VER: int = 3
     # 在线线路图网址，结尾删除"/"
     LINK: str = ''
     # 从A站到B站，非出站换乘（越野）的最远步行距离，默认值为1500
@@ -1273,8 +1364,8 @@ def run():
 
     link_hash = hashlib.md5(LINK.encode('utf-8')).hexdigest()
     # 文件设置
-    LOCAL_FILE_PATH = f'mtr-station-data-{link_hash}.json'
-    INTERVAL_PATH = f'mtr-route-data-{link_hash}.json'
+    LOCAL_FILE_PATH = f'mtr-station-data-{link_hash}-{MTR_VER}.json'
+    INTERVAL_PATH = f'mtr-route-data-{link_hash}-{MTR_VER}.json'
     BASE_PATH = 'mtr_pathfinder_data'
     PNG_PATH = 'mtr_pathfinder_data'
 
@@ -1299,6 +1390,7 @@ def run():
 
     # 输出的图片中是否显示详细信息，默认值为False
     DETAIL: bool = False
+
     # 出发、到达车站
     station1 = ''
     station2 = ''
@@ -1308,7 +1400,8 @@ def run():
          TRANSFER_ADDITION, WILD_ADDITION, STATION_TABLE,
          ORIGINAL_IGNORED_LINES, UPDATE_DATA, GEN_ROUTE_INTERVAL,
          IGNORED_LINES, AVOID_STATIONS, CALCULATE_HIGH_SPEED,
-         CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT, DETAIL, show=True)
+         CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT, DETAIL, MTR_VER,
+         show=True)
 
 
 if __name__ == '__main__':
