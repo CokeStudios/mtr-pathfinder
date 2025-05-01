@@ -25,7 +25,6 @@ from PIL import Image, ImageDraw, ImageFont
 import requests
 
 MAX_INT = 2 ** 64 - 1
-MAX_HOUR = 4
 
 RUNNING_SPEED: int = 5.612          # 站内换乘速度，单位 block/s
 TRANSFER_SPEED: int = 4.317         # 出站换乘速度，单位 block/s
@@ -435,7 +434,7 @@ def sta_id(station: str) -> int:
 
 def load_tt(tt_dict: dict[tuple], data, start, end, departure_time: int,
             tz_offset: float, DEP_PATH, STATION_TABLE, TRANSFER_ADDITION,
-            CALCULATE_WALKING_WILD, WILD_ADDITION):
+            CALCULATE_WALKING_WILD, WILD_ADDITION, MAX_HOUR):
     tz_offset = int(tz_offset * 60 * 60)
     with open(DEP_PATH, 'r', encoding='utf-8') as f:
         dep_data: dict[str, list[int]] = json.load(f)
@@ -964,9 +963,9 @@ def main(station1: str, station2: str, LINK: str,
          GEN_DEPARTURE: bool = False, IGNORED_LINES: list = [],
          AVOID_STATIONS: list = [],
          CALCULATE_HIGH_SPEED: bool = True, CALCULATE_BOAT: bool = True,
-         CALCULATE_WALKING_WILD: bool = False,
-         ONLY_LRT: bool = False, DETAIL: bool = False, timetable=None,
-         show=False, departure_time=None, tz=0) -> Union[str, False, None]:
+         CALCULATE_WALKING_WILD: bool = False, ONLY_LRT: bool = False,
+         DETAIL: bool = False, MAX_HOUR=3, timetable=None, show=False,
+         departure_time=None, tz=0) -> Union[str, False, None]:
     '''
     Main function. You can call it in your own code.
     Output:
@@ -1008,7 +1007,7 @@ def main(station1: str, station2: str, LINK: str,
 
     tt, trips = load_tt(timetable, data, station1, station2, departure_time,
                         tz, DEP_PATH, STATION_TABLE, TRANSFER_ADDITION,
-                        CALCULATE_WALKING_WILD, WILD_ADDITION)
+                        CALCULATE_WALKING_WILD, WILD_ADDITION, MAX_HOUR)
 
     csa = CSA(len(data['stations']), tt)
     s1 = station_name_to_id(data, station1, STATION_TABLE)
@@ -1033,7 +1032,8 @@ def run():
     # 地图设置
     # 在线线路图网址，结尾删除"/"
     LINK: str = ''
-    link_hash = hashlib.md5(LINK.encode('utf-8')).hexdigest()
+    # 旅途的最长时间，默认值为3
+    MAX_HOUR: int = 3
     # 从A站到B站，非出站换乘（越野）的最远步行距离，默认值为1500
     MAX_WILD_BLOCKS: int = 1500
     # 手动增加出站换乘
@@ -1049,6 +1049,7 @@ def run():
     ORIGINAL_IGNORED_LINES: list = []
 
     # 文件设置
+    link_hash = hashlib.md5(LINK.encode('utf-8')).hexdigest()
     LOCAL_FILE_PATH = f'mtr-station-data-{link_hash}.json'
     DEP_PATH = f'mtr-route-data-{link_hash}.json'
     BASE_PATH = 'mtr_pathfinder_data'
@@ -1087,7 +1088,7 @@ def run():
          TRANSFER_ADDITION, WILD_ADDITION, STATION_TABLE,
          ORIGINAL_IGNORED_LINES, UPDATE_DATA, GEN_DEPARTURE,
          IGNORED_LINES, AVOID_STATIONS, CALCULATE_HIGH_SPEED,
-         CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT, DETAIL,
+         CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT, DETAIL, MAX_HOUR,
          show=True, departure_time=DEP_TIME)
 
 
