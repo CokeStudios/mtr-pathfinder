@@ -3,13 +3,13 @@ Find paths between two stations for Minecraft Transit Railway.
 '''
 
 from array import array
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from enum import Enum
 from io import BytesIO
 from math import gcd, sqrt
 from operator import itemgetter
-from time import gmtime, strftime, timezone
+from time import gmtime, strftime
 from typing import Optional, Dict, Literal, Tuple, List, Union
 import base64
 import hashlib
@@ -192,8 +192,8 @@ class CSA:
         return route
 
     def compute(self, departure_station, arrival_station, departure_time) -> list[tuple]:
-        self.in_connection = array('L', [MAX_INT for _ in range(self.max_stations)])
-        self.earliest_arrival = array('L', [MAX_INT for _ in range(self.max_stations)])
+        self.in_connection = array('Q', [MAX_INT for _ in range(self.max_stations)])
+        self.earliest_arrival = array('Q', [MAX_INT for _ in range(self.max_stations)])
         self.earliest_arrival[departure_station] = departure_time
 
         if departure_station <= self.max_stations and arrival_station <= self.max_stations:
@@ -510,9 +510,11 @@ def load_tt(tt_dict: dict[tuple], data, start, end, departure_time: int,
                 if max_time - 86400 < _t[2] < departure_time:
                     continue
 
-                timetable.append(_t + [trip_no])
-                if _t[4][1] != '':
+                if _t[4][1] != '':  # Not walking
+                    _t += [trip_no]
                     trips[str(trip_no)][str(_t[0])] = _t[2]
+
+                timetable.append(_t)
 
             trip_no += 1
 
@@ -594,26 +596,34 @@ def gen_timetable(data: dict, IGNORED_LINES: bool,
         for i in range(len(station_ids) - 1):
             station1 = station_ids[i]
             station2 = station_ids[i + 1]
+            _station1 = real_ids[i]
+            _station2 = real_ids[i + 1]
             dur = round(durations[i] / 1000)
+            dep_time = dep
+            arr_time = dep + dur
+            dwell = round(dwells[i + 1] / 1000)
+            dep += dur
+            dep += dwell
             if station1 == station2:
-                dwell = round(dwells[i + 1] / 1000)
-                dep += dur
-                dep += dwell
                 continue
 
-            if station1 not in avoid_ids and station2 not in avoid_ids:
-                arr_time = dep + dur
+            if _station2 in avoid_ids:
+                continue
+
+            if _station1 not in avoid_ids and _station2 not in avoid_ids:
                 tt.append((sta_id(station1), sta_id(station2),
-                           dep, arr_time,
+                           dep_time, arr_time,
                            [route_id, route['stations'][-1]['id']]))
 
             # 添加出站换乘
-            _station2 = real_ids[i + 1]
             connections = data['stations'][_station2]['connections']
             if _station2 in TRANSFER_ADDITION:
                 connections += data['stations'][TRANSFER_ADDITION[_station2]]
             for con in connections:
                 if con not in data['transfer_time'][_station2]:
+                    continue
+
+                if con in avoid_ids:
                     continue
 
                 t2 = round(data['transfer_time'][_station2][con])
@@ -635,16 +645,15 @@ def gen_timetable(data: dict, IGNORED_LINES: bool,
                     if con not in data['transfer_time'][_station2]:
                         continue
 
+                    if con in avoid_ids:
+                        continue
+
                     t2 = round(data['transfer_time'][_station2][con])
                     dist = data['transfer_dist'][_station2][con]
                     con = data['stations'][con]['station']
                     tt.append((sta_id(station2), sta_id(con),
                                arr_time, arr_time + t2,
                                [f'步行 Walk {round(dist, 2)}m', '']))
-
-            dwell = round(dwells[i + 1] / 1000)
-            dep += dur
-            dep += dwell
 
         tt_dict[route_id] = tt
 
@@ -974,8 +983,14 @@ def main(station1: str, station2: str, LINK: str,
     else 其他 -- base64 str of the generated image 生成图片的 base64 字符串
     '''
     if departure_time is None:
-        t1 = datetime.now().replace(year=1970, month=1, day=1).astimezone()
-        departure_time = round(t1.timestamp() - timezone)
+        dtz = timezone(timedelta(hours=tz))
+        t1 = datetime.now().replace(year=1970, month=1, day=1)
+        try:
+            t1 = t1.astimezone(dtz).replace(tzinfo=timezone.utc)
+        except OSError:
+            t1 = t1.replace(tzinfo=timezone.utc)
+
+        departure_time = round(t1.timestamp())
         departure_time += 10  # 寻路时间
 
     IGNORED_LINES += ORIGINAL_IGNORED_LINES
@@ -986,7 +1001,7 @@ def main(station1: str, station2: str, LINK: str,
     if UPDATE_DATA is True or (not os.path.exists(LOCAL_FILE_PATH)):
         data = fetch_data(LINK, LOCAL_FILE_PATH, MAX_WILD_BLOCKS)
     else:
-        with open(LOCAL_FILE_PATH) as f:
+        with open(LOCAL_FILE_PATH, encoding='utf-8') as f:
             data = json.load(f)
 
     if GEN_DEPARTURE is True or (not os.path.exists(DEP_PATH)):
@@ -1018,6 +1033,9 @@ def main(station1: str, station2: str, LINK: str,
     s1 = int('0x' + data['stations'][s1]['station'], 16)
     s2 = int('0x' + data['stations'][s2]['station'], 16)
     result = csa.compute(s1, s2, departure_time)
+    if result == []:
+        return False
+
     ert = process_path(result, station1, station2, trips,
                        data, DETAIL, STATION_TABLE)
 
