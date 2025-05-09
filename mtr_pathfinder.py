@@ -48,7 +48,7 @@ opencc1 = OpenCC('s2t')
 opencc2 = OpenCC('t2jp')
 
 
-def get_close_matches(words, possibilities, cutoff=0.45):
+def get_close_matches(words, possibilities, cutoff=0.2):
     result = [(-1, None)]
     s = SequenceMatcher()
     for word in words:
@@ -652,47 +652,60 @@ def create_graph(data: list, start: str, end: str, IGNORED_LINES: bool,
             waiting_walking_dict[(station, transfer)] = \
                 (duration, f'出站换乘步行 Walk {round(dist, 2)}m')
 
-        additions = None
+        additions1 = set()
         if station_dict['name'] in TRANSFER_ADDITION:
-            additions = TRANSFER_ADDITION[station_dict['name']]
-            wild = False
-        if station_dict['name'] in WILD_ADDITION:
-            additions = WILD_ADDITION[station_dict['name']]
-            wild = True
+            for x in TRANSFER_ADDITION[station_dict['name']]:
+                additions1.add(x)
 
-        if additions is not None:
-            for x in additions:
-                for station2, station2_dict in all_stations.items():
-                    if station2 in avoid_ids:
-                        continue
+        for x in additions1:
+            for station2, station2_dict in all_stations.items():
+                if station2 in avoid_ids:
+                    continue
 
-                    if station2_dict['name'] == x:
-                        if station2 not in station_dict['connections']:
-                            try:
-                                if wild is True:
-                                    dist = get_distance(station_dict,
-                                                        station2_dict)
-                                    duration = dist / WILD_WALKING_SPEED
-                                else:
-                                    dist = get_distance(station_dict,
-                                                        station2_dict)
-                                    duration = dist / TRANSFER_SPEED
+                if station2_dict['name'] == x:
+                    if station2 not in station_dict['connections']:
+                        try:
+                            dist = get_distance(station_dict, station2_dict)
+                            duration = dist / TRANSFER_SPEED
+                            if (station, station2) not in edges_attr_dict:
+                                edges_attr_dict[(station, station2)] = []
+                            edges_attr_dict[(station, station2)].append(
+                                (f'出站换乘步行 Walk {round(dist, 2)}m',
+                                 duration, 0))
+                            waiting_walking_dict[(station, station2)] = \
+                                (duration, f'出站换乘步行 Walk {round(dist, 2)}m')
+                        except KeyError:
+                            pass
 
-                                if (station, station2) in edges_attr_dict:
-                                    edges_attr_dict[(station, station2)] \
-                                        .append(
-                                            (f'出站换乘步行 Walk {round(dist, 2)}m',
-                                             duration, 0))
-                                else:
-                                    edges_attr_dict[(station, station2)] = \
-                                        [(f'出站换乘步行 Walk {round(dist, 2)}m',
-                                          duration, 0)]
+                        break
 
-                                waiting_walking_dict[(station, station2)] = \
-                                    (duration,
-                                     f'出站换乘步行 Walk {round(dist, 2)}m')
-                            except KeyError:
-                                pass
+        additions2 = set()
+        if station_dict['name'] in WILD_ADDITION and \
+                CALCULATE_WALKING_WILD is True:
+            for x in WILD_ADDITION[station_dict['name']]:
+                additions2.add(x)
+
+        for x in additions2:
+            for station2, station2_dict in all_stations.items():
+                if station2 in avoid_ids:
+                    continue
+
+                if station2_dict['name'] == x:
+                    if station2 not in station_dict['connections']:
+                        try:
+                            dist = get_distance(station_dict, station2_dict)
+                            duration = dist / WILD_WALKING_SPEED
+                            if (station, station2) not in edges_attr_dict:
+                                edges_attr_dict[(station, station2)] = []
+
+                            edges_attr_dict[(station, station2)].append(
+                                (f'步行 Walk {round(dist, 2)}m', duration, 0))
+                            waiting_walking_dict[(station, station2)] = \
+                                (duration, f'步行 Walk {round(dist, 2)}m')
+                        except KeyError:
+                            pass
+
+                        break
 
     TEMP_IGNORED_LINES = [x.lower() for x in IGNORED_LINES]
     # 添加普通路线
@@ -1356,10 +1369,10 @@ def main(station1: str, station2: str, LINK: str,
          STATION_TABLE: dict[str, str] = {},
          ORIGINAL_IGNORED_LINES: list = [], UPDATE_DATA: bool = False,
          GEN_ROUTE_INTERVAL: bool = False, IGNORED_LINES: list = [],
-         AVOID_STATIONS: list = [],
-         CALCULATE_HIGH_SPEED: bool = True, CALCULATE_BOAT: bool = True,
-         CALCULATE_WALKING_WILD: bool = False, ONLY_LRT: bool = False,
-         DETAIL: bool = False, MTR_VER: int = 3, show=False,
+         AVOID_STATIONS: list = [], CALCULATE_HIGH_SPEED: bool = True,
+         CALCULATE_BOAT: bool = True, CALCULATE_WALKING_WILD: bool = False,
+         ONLY_LRT: bool = False, IN_THEORY: bool = False, DETAIL: bool = False,
+         MTR_VER: int = 3, show=False,
          cache=True) -> Union[tuple[Image.Image, str], False, None]:
     '''
     Main function. You can call it in your own code.
@@ -1381,7 +1394,7 @@ def main(station1: str, station2: str, LINK: str,
     if UPDATE_DATA is True or (not os.path.exists(LOCAL_FILE_PATH)):
         data = fetch_data(LINK, LOCAL_FILE_PATH, MTR_VER)
     else:
-        with open(LOCAL_FILE_PATH) as f:
+        with open(LOCAL_FILE_PATH, encoding='utf-8') as f:
             data = json.load(f)
 
     if GEN_ROUTE_INTERVAL is True or (not os.path.exists(INTERVAL_PATH)):
@@ -1397,7 +1410,11 @@ def main(station1: str, station2: str, LINK: str,
     version2 = strftime('%Y%m%d-%H%M',
                         gmtime(os.path.getmtime(INTERVAL_PATH)))
 
-    route_type = RouteType.WAITING
+    if IN_THEORY is True:
+        route_type = RouteType.IN_THEORY
+    else:
+        route_type = RouteType.WAITING
+
     G = create_graph(data, station1, station2, IGNORED_LINES,
                      CALCULATE_HIGH_SPEED,
                      CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT,
