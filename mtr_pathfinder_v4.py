@@ -9,7 +9,7 @@ from enum import Enum
 from io import BytesIO
 from math import gcd, sqrt
 from operator import itemgetter
-from time import gmtime, strftime
+from time import gmtime, strftime, time
 from typing import Optional, Dict, Literal, Tuple, List, Union
 import base64
 import hashlib
@@ -159,11 +159,12 @@ def draw_text_v2(
 
 # From https://github.com/trainline-eu/csa-challenge/blob/2aa0fa55e466692d404d87aa2dcaf5b83bca5920/csa.py and https://ljn.io/posts/connection-scan-algorithm-with-interchange-time
 class CSA:
-    def __init__(self, max_stations, connections: list[tuple]):
+    def __init__(self, max_stations, connections: list[tuple], timeout_min=2):
         self.in_connection = array('L')
         self.earliest_arrival = array('L')
         self.max_stations = max_stations
         self.connections: list[tuple] = connections
+        self.timeout_min = timeout_min
 
     def main_loop(self, arrival_station):
         earliest = MAX_INT
@@ -177,6 +178,10 @@ class CSA:
 
             elif c[2] >= earliest:
                 return
+
+            if i % 20000 == 0:
+                if time() > self.start_time + 60 * self.timeout_min:
+                    raise TimeoutError('Pathfinding timeout')
 
     def find_path(self, arrival_station):
         route = []
@@ -197,6 +202,7 @@ class CSA:
         self.earliest_arrival[departure_station] = departure_time
 
         if departure_station <= self.max_stations and arrival_station <= self.max_stations:
+            self.start_time = time()
             self.main_loop(arrival_station)
 
         return self.find_path(arrival_station)
@@ -589,6 +595,12 @@ def gen_timetable(data: dict, IGNORED_LINES: bool,
 
         station_ids = [data['stations'][x['id']]['station']
                        for x in route['stations']]
+        if len(station_ids) - 1 < len(durations):
+            durations = durations[:len(station_ids) - 1]
+
+        if len(station_ids) - 1 > len(durations):
+            continue
+
         real_ids = [x['id'] for x in route['stations']]
         dwells = [x['dwellTime'] for x in route['stations']]
         dep = 0
@@ -973,8 +985,9 @@ def main(station1: str, station2: str, LINK: str,
          AVOID_STATIONS: list = [],
          CALCULATE_HIGH_SPEED: bool = True, CALCULATE_BOAT: bool = True,
          CALCULATE_WALKING_WILD: bool = False, ONLY_LRT: bool = False,
-         DETAIL: bool = False, MAX_HOUR=3, timetable=None, show=False,
-         departure_time=None, tz=0) -> Union[str, False, None]:
+         DETAIL: bool = False, MAX_HOUR=3, timetable=None, gen_image=True,
+         show=False, departure_time=None, tz=0,
+         timeout_min=2) -> Union[str, False, None]:
     '''
     Main function. You can call it in your own code.
     Output:
@@ -1024,7 +1037,7 @@ def main(station1: str, station2: str, LINK: str,
                         tz, DEP_PATH, STATION_TABLE, TRANSFER_ADDITION,
                         CALCULATE_WALKING_WILD, WILD_ADDITION, MAX_HOUR)
 
-    csa = CSA(len(data['stations']), tt)
+    csa = CSA(len(data['stations']), tt, timeout_min)
     s1 = station_name_to_id(data, station1, STATION_TABLE)
     s2 = station_name_to_id(data, station2, STATION_TABLE)
     if s1 is None or s2 is None:
@@ -1039,11 +1052,14 @@ def main(station1: str, station2: str, LINK: str,
     ert = process_path(result, station1, station2, trips,
                        data, DETAIL, STATION_TABLE)
 
+    if gen_image is False:
+        return ert
+
     if ert[0] in [False, None]:
         return ert[0]
-    else:
-        return save_image(route_type, ert, BASE_PATH,
-                          version1, version2, PNG_PATH, departure_time, show)
+
+    return save_image(route_type, ert, BASE_PATH, version1, version2,
+                      PNG_PATH, departure_time, show)
 
 
 def run():

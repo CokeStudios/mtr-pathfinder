@@ -332,7 +332,7 @@ def fetch_data(link: str, LOCAL_FILE_PATH, MTR_VER) -> str:
             d['station'] = hex(i)[2:]
             data_new['stations'][d['id']] = d
             i += 1
-        
+
         x_dict = {x['id']: [] for x in data['stations']}
         z_dict = {x['id']: [] for x in data['stations']}
         for route in data['routes']:
@@ -431,9 +431,8 @@ def station_name_to_id(data: list, sta: str, STATION_TABLE,
     return output
 
 
-def get_route_station_index(route: dict,
-                            station_1_id: str, station_2_id: str,
-                            MTR_VER = 3) -> tuple:
+def get_route_station_index(route: dict, station_1_id: str, station_2_id: str,
+                            MTR_VER=3) -> tuple:
     '''
     Get the index of the two stations in one route.
     '''
@@ -457,8 +456,7 @@ def get_route_station_index(route: dict,
 
 
 def get_approximated_time(route: dict, station_1_id: str, station_2_id: str,
-                          data: list, tick: bool = False,
-                          MTR_VER = 3) -> float:
+                          data: list, tick: bool = False, MTR_VER=3) -> float:
     '''
     Get the approximated time of the two stations in one route.
     '''
@@ -526,7 +524,7 @@ def get_app_time_v4(route: dict,
     return t
 
 
-def create_graph(data: list, start: str, end: str, IGNORED_LINES: bool,
+def create_graph(data: list, IGNORED_LINES: bool,
                  CALCULATE_HIGH_SPEED: bool, CALCULATE_BOAT: bool,
                  CALCULATE_WALKING_WILD: bool, ONLY_LRT: bool,
                  AVOID_STATIONS: list, route_type: RouteType,
@@ -605,11 +603,6 @@ def create_graph(data: list, start: str, end: str, IGNORED_LINES: bool,
 
         with open(LOCAL_FILE_PATH, 'w', encoding='utf-8') as f:
             json.dump(data, f)
-
-    start_station = station_name_to_id(data, start, STATION_TABLE)
-    end_station = station_name_to_id(data, end, STATION_TABLE)
-    if not (start_station and end_station):
-        return nx.MultiDiGraph()
 
     avoid_ids = [station_name_to_id(data, x, STATION_TABLE)
                  for x in AVOID_STATIONS]
@@ -739,7 +732,11 @@ def create_graph(data: list, start: str, end: str, IGNORED_LINES: bool,
         durations = route['durations']
         if len(stations) < 2:
             continue
-        if len(stations) - 1 != len(durations):
+
+        if len(stations) - 1 < len(durations):
+            durations = durations[:len(stations) - 1]
+
+        if len(stations) - 1 > len(durations):
             continue
 
         # if route_type == RouteType.WAITING:
@@ -1016,6 +1013,7 @@ def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
 
         sta1_name = stations[station_1]['name'].replace('|', ' ')
         sta2_name = stations[station_2]['name'].replace('|', ' ')
+        sta1_id = station_name_to_id(data, sta1_name, {})
         for route_name in route_name_list:
             for x in duration_list:
                 if route_name == x[0]:
@@ -1045,12 +1043,26 @@ def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
                     route = (z['number'] + ' ' +
                              route_name.split('||')[0]).strip()
                     route = route.replace('|', ' ')
+                    next_id = None
                     if MTR_VER == 3:
                         sta_id = z['stations'][-1].split('_')[0]
+                        for q, x in enumerate(z['stations']):
+                            if x.split('_')[0] == sta1_id and \
+                                    q != len(z['stations']) - 1:
+                                next_id = z['stations'][q + 1].split('_')[0]
+                                break
                     else:
                         sta_id = z['stations'][-1]['id']
+                        for q, x in enumerate(z['stations']):
+                            if x['id'] == sta1_id and \
+                                    q != len(z['stations']) - 1:
+                                next_id = z['stations'][q + 1]['id']
+                                break
+
+                    if z['circular'] in ['cw', 'ccw']:
+                        sta_id = next_id
+
                     terminus_name: str = stations[sta_id]['name']
-                    # terminus_name = terminus_name.replace('|', ' ')
                     if terminus_name.count('|') == 0:
                         t1_name = t2_name = terminus_name
                     else:
@@ -1059,12 +1071,25 @@ def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
                                                                       ' ')
 
                     if z['circular'] == 'cw':
-                        t1_name = '(顺时针) ' + t1_name
-                        t2_name += ' (Clockwise)'
+                        if next_id is None:
+                            t1_name = '(顺时针) ' + t1_name
+                            t2_name += ' (Clockwise)'
+                            terminus = (t1_name, t2_name)
+                        else:
+                            name1 = '(顺时针) 经由' + t1_name
+                            name2 = f'(Clockwise) Via {t2_name}'
+                            terminus = (True, name1, name2)
                     elif z['circular'] == 'ccw':
-                        t1_name = '(逆时针) ' + t1_name
-                        t2_name += ' (Counterclockwise)'
-                    terminus = (t1_name, t2_name)
+                        if next_id is None:
+                            t1_name = '(逆时针) ' + t1_name
+                            t2_name += ' (Counterclockwise)'
+                            terminus = (t1_name, t2_name)
+                        else:
+                            name1 = '(逆时针) 经由' + t1_name
+                            name2 = f'(Counterclockwise) Via {t2_name}'
+                            terminus = (True, name1, name2)
+                    else:
+                        terminus = (t1_name, t2_name)
 
                     color = hex(z['color']).lstrip('0x').rjust(6, '0')
                     train_type = z['type']
@@ -1123,7 +1148,11 @@ def save_image(route_type: RouteType, every_route_time: list,
     for route_data in every_route_time:
         now_sta = (route_data[0], route_data[1])
         route_img = Image.open(PNG_PATH + os.sep + f'{route_data[-1]}.png')
-        terminus = route_data[4][0] + '方向 To ' + route_data[4][1]
+        if route_data[4][0] is True:
+            terminus = ' '.join(route_data[4][1:])
+        else:
+            terminus = route_data[4][0] + '方向 To ' + route_data[4][1]
+
         time1 = str(strftime('%M:%S', gmtime(route_data[5])))
         time2 = str(strftime('%M:%S', gmtime(route_data[6])))
         time3 = str(strftime('%M:%S', gmtime(route_data[7])))
@@ -1372,7 +1401,7 @@ def main(station1: str, station2: str, LINK: str,
          AVOID_STATIONS: list = [], CALCULATE_HIGH_SPEED: bool = True,
          CALCULATE_BOAT: bool = True, CALCULATE_WALKING_WILD: bool = False,
          ONLY_LRT: bool = False, IN_THEORY: bool = False, DETAIL: bool = False,
-         MTR_VER: int = 3, show=False,
+         MTR_VER: int = 3, G=None, gen_image=True, show=False,
          cache=True) -> Union[tuple[Image.Image, str], False, None]:
     '''
     Main function. You can call it in your own code.
@@ -1415,23 +1444,27 @@ def main(station1: str, station2: str, LINK: str,
     else:
         route_type = RouteType.WAITING
 
-    G = create_graph(data, station1, station2, IGNORED_LINES,
-                     CALCULATE_HIGH_SPEED,
-                     CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT,
-                     AVOID_STATIONS, route_type, ORIGINAL_IGNORED_LINES,
-                     INTERVAL_PATH, version1, version2, LOCAL_FILE_PATH,
-                     STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION,
-                     MAX_WILD_BLOCKS, MTR_VER, cache)
+    if G is None:
+        G = create_graph(data, IGNORED_LINES, CALCULATE_HIGH_SPEED,
+                         CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT,
+                         AVOID_STATIONS, route_type, ORIGINAL_IGNORED_LINES,
+                         INTERVAL_PATH, version1, version2, LOCAL_FILE_PATH,
+                         STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION,
+                         MAX_WILD_BLOCKS, MTR_VER, cache)
+
     shortest_path, shortest_distance, waiting_time, riding_time, ert = \
         find_shortest_route(G, station1, station2,
                             data, STATION_TABLE, MTR_VER)
 
+    if gen_image is False:
+        return ert, shortest_distance
+
     if shortest_path in [False, None]:
         return shortest_path
-    else:
-        return save_image(route_type, ert, shortest_distance, riding_time,
-                          waiting_time, BASE_PATH, version1, version2, DETAIL,
-                          PNG_PATH, show)
+
+    return save_image(route_type, ert, shortest_distance, riding_time,
+                      waiting_time, BASE_PATH, version1, version2, DETAIL,
+                      PNG_PATH, show)
 
 
 def run():
