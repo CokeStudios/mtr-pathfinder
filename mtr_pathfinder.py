@@ -7,6 +7,7 @@ from enum import Enum
 from io import BytesIO
 from math import gcd, sqrt
 from operator import itemgetter
+from statistics import median_low
 from threading import Thread, BoundedSemaphore
 from time import gmtime, strftime, time
 from typing import Optional, Dict, Literal, Tuple, List, Union
@@ -252,61 +253,113 @@ def fetch_interval_data(station_id: str, LINK) -> None:
             ROUTE_INTERVAL_DATA.put([station_id, [time(), data]])
 
 
-def gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK) -> None:
+def gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER) -> None:
     '''
     Generate all the interval data.
     '''
     with open(LOCAL_FILE_PATH, encoding='utf-8') as f:
         data = json.load(f)
 
-    threads: list[Thread] = []
-    for station_id in data[0]['stations']:
-        t = Thread(target=fetch_interval_data, args=(station_id, LINK))
-        t.start()
-        threads.append(t)
-    for t in threads:
-        t.join()
+    if MTR_VER == 3:
+        threads: list[Thread] = []
+        for station_id in data[0]['stations']:
+            t = Thread(target=fetch_interval_data, args=(station_id, LINK))
+            t.start()
+            threads.append(t)
+        for t in threads:
+            t.join()
 
-    interval_data_list = []
-    while not ROUTE_INTERVAL_DATA.empty():
-        interval_data_list.append(ROUTE_INTERVAL_DATA.get())
-    arrivals = dict(interval_data_list)
-    dep_dict_per_route: dict[str, list] = {}
-    dep_dict_per_route_: dict[str, list] = {}
-    for t, arrivals in arrivals.values():
-        dep_dict_per_station: dict[str, list] = {}
-        for arrival in arrivals[:-1]:
-            name = arrival['name']
-            if name in dep_dict_per_station:
-                dep_dict_per_station[name] += [arrival['arrival']]
-            else:
-                dep_dict_per_station[name] = [arrival['arrival']]
+        interval_data_list = []
+        while not ROUTE_INTERVAL_DATA.empty():
+            interval_data_list.append(ROUTE_INTERVAL_DATA.get())
 
-        for x, item in dep_dict_per_station.items():
-            dep_s_list = []
-            if len(item) == 1:
-                if x not in dep_dict_per_route_:
-                    dep_dict_per_route_[x] = [(item[0] / 1000 - t) * 1.25]
-            else:
-                for y in range(len(item) - 1):
-                    dep_s_list.append((item[y + 1] - item[y]) / 1000)
-                if x in dep_dict_per_route:
-                    dep_dict_per_route[x] += [sum(dep_s_list) /
-                                              len(dep_s_list)]
+        arrivals = dict(interval_data_list)
+        dep_dict_per_route: dict[str, list] = {}
+        dep_dict_per_route_: dict[str, list] = {}
+        for t, arrivals in arrivals.values():
+            dep_dict_per_station: dict[str, list] = {}
+            for arrival in arrivals[:-1]:
+                name = arrival['name']
+                if name in dep_dict_per_station:
+                    dep_dict_per_station[name] += [arrival['arrival']]
                 else:
-                    dep_dict_per_route[x] = [sum(dep_s_list) /
-                                             len(dep_s_list)]
+                    dep_dict_per_station[name] = [arrival['arrival']]
 
-    for x in dep_dict_per_route_:
-        if x not in dep_dict_per_route:
-            dep_dict_per_route[x] = dep_dict_per_route_[x]
+            for x, item in dep_dict_per_station.items():
+                dep_s_list = []
+                if len(item) == 1:
+                    if x not in dep_dict_per_route_:
+                        dep_dict_per_route_[x] = [(item[0] / 1000 - t) * 1.25]
+                else:
+                    for y in range(len(item) - 1):
+                        dep_s_list.append((item[y + 1] - item[y]) / 1000)
+                    if x in dep_dict_per_route:
+                        dep_dict_per_route[x] += [sum(dep_s_list) /
+                                                len(dep_s_list)]
+                    else:
+                        dep_dict_per_route[x] = [sum(dep_s_list) /
+                                                len(dep_s_list)]
 
-    freq_dict: dict[str, list] = {}
-    for route, arrivals in dep_dict_per_route.items():
-        if len(arrivals) == 1:
-            freq_dict[route] = round_ten(arrivals[0])
-        else:
-            freq_dict[route] = round_ten(sum(arrivals) / len(arrivals))
+        for x in dep_dict_per_route_:
+            if x not in dep_dict_per_route:
+                dep_dict_per_route[x] = dep_dict_per_route_[x]
+
+        freq_dict: dict[str, list] = {}
+        for route, arrivals in dep_dict_per_route.items():
+            if len(arrivals) == 1:
+                freq_dict[route] = round_ten(arrivals[0])
+            else:
+                freq_dict[route] = round_ten(sum(arrivals) / len(arrivals))
+
+    elif MTR_VER == 4:
+        link = LINK.rstrip('/') + '/mtr/api/map/departures?dimension=0'
+        departures = requests.get(link).json()['data']['departures']
+        print(departures)
+        dep_dict: dict[str, list[int]] = {}
+        for x in departures:
+            dep_list = set()
+            for y in x['departures']:
+                for z in y['departures']:
+                    dep = round(z / 1000)
+                    while dep < 0:
+                        dep += 86400
+
+                    dep_list.add(dep)
+
+            dep_list = list(sorted(dep_list))
+            dep_dict[x['id']] = dep_list
+
+        freq_dict: dict[str, list] = {}
+        for route_id, stats in dep_dict.items():
+            if len(stats) == 0:
+                continue
+
+            for route_stats in data[0]['routes']:
+                if route_stats['id'] == route_id:
+                    break
+            else:
+                print(f'Route {route_id} not found')
+                continue
+
+            route_name = route_stats['name']
+            freq_list = []
+            for i1 in range(len(stats)):
+                i2 = i1 + 1
+                if i2 == len(stats):
+                    i2 = 0
+                    dep_2 = stats[i2] + 86400
+                else:
+                    dep_2 = stats[i2]
+
+                dep_1 = stats[i1]
+                freq = dep_2 - dep_1
+                freq_list.append(freq)
+
+            median_freq = median_low(freq_list)
+            freq_dict[route_name] = round_ten(median_freq)
+
+    else:
+        return
 
     y = input(f'是否替换{INTERVAL_PATH}文件? (Y/N) ').lower()
     if y == 'y':
@@ -1415,6 +1468,9 @@ def main(station1: str, station2: str, LINK: str,
     if MTR_VER not in [3, 4]:
         raise NotImplementedError('MTR_VER should be 3 or 4')
 
+    if LINK == '':
+        raise ValueError('Railway System Map link is empty')
+
     IGNORED_LINES += ORIGINAL_IGNORED_LINES
     STATION_TABLE = {x.lower(): y.lower() for x, y in STATION_TABLE.items()}
     if LINK.endswith('/index.html'):
@@ -1427,12 +1483,12 @@ def main(station1: str, station2: str, LINK: str,
             data = json.load(f)
 
     if GEN_ROUTE_INTERVAL is True or (not os.path.exists(INTERVAL_PATH)):
-        if MTR_VER == 4:
-            raise NotImplementedError(
-                'Please use the real-time pathfinder for MTR 4.0.0 '
-                'or input interval data manually.')
+        # if MTR_VER == 4:
+        #     raise NotImplementedError(
+        #         'Please use the real-time pathfinder for MTR 4.0.0 '
+        #         'or input interval data manually.')
 
-        gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK)
+        gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER)
 
     version1 = strftime('%Y%m%d-%H%M',
                         gmtime(os.path.getmtime(LOCAL_FILE_PATH)))
