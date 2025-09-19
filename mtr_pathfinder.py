@@ -1468,15 +1468,15 @@ def main(station1: str, station2: str, LINK: str,
     if MTR_VER not in [3, 4]:
         raise NotImplementedError('MTR_VER should be 3 or 4')
 
-    if LINK == '':
-        raise ValueError('Railway System Map link is empty')
-
     IGNORED_LINES += ORIGINAL_IGNORED_LINES
     STATION_TABLE = {x.lower(): y.lower() for x, y in STATION_TABLE.items()}
     if LINK.endswith('/index.html'):
         LINK = LINK.rstrip('/index.html')
 
     if UPDATE_DATA is True or (not os.path.exists(LOCAL_FILE_PATH)):
+        if LINK == '':
+            raise ValueError('Railway System Map link is empty')
+
         data = fetch_data(LINK, LOCAL_FILE_PATH, MTR_VER)
     else:
         with open(LOCAL_FILE_PATH, encoding='utf-8') as f:
@@ -1487,6 +1487,9 @@ def main(station1: str, station2: str, LINK: str,
         #     raise NotImplementedError(
         #         'Please use the real-time pathfinder for MTR 4.0.0 '
         #         'or input interval data manually.')
+
+        if LINK == '':
+            raise ValueError('Railway System Map link is empty')
 
         gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER)
 
