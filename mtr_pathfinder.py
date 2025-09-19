@@ -314,7 +314,6 @@ def gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER) -> None:
     elif MTR_VER == 4:
         link = LINK.rstrip('/') + '/mtr/api/map/departures?dimension=0'
         departures = requests.get(link).json()['data']['departures']
-        print(departures)
         dep_dict: dict[str, list[int]] = {}
         for x in departures:
             dep_list = set()
