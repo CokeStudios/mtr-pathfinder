@@ -45,8 +45,11 @@ ROUTE_INTERVAL_DATA = Queue()
 semaphore = BoundedSemaphore(25)
 original = {}
 tmp_names = {}
+tmp_names2 = {}
 opencc1 = OpenCC('s2t')
 opencc2 = OpenCC('t2jp')
+opencc3 = OpenCC('t2s')
+opencc4 = OpenCC('jp2t')
 
 
 def get_close_matches(words, possibilities, cutoff=0.2):
@@ -443,7 +446,7 @@ def get_distance(a_dict: dict, b_dict: dict, square: bool = False) -> float:
 def station_name_to_id(data: list, sta: str, STATION_TABLE,
                        fuzzy_compare=True) -> str:
     '''
-    Convert one station's name to its ID.
+    Convert a station's name to its ID.
     '''
     sta = sta.lower()
     if sta in STATION_TABLE:
@@ -752,17 +755,45 @@ def create_graph(data: list, IGNORED_LINES: bool,
 
                         break
 
-    TEMP_IGNORED_LINES = [x.lower() for x in IGNORED_LINES]
+    TEMP_IGNORED_LINES = [x.lower().strip() for x in IGNORED_LINES if x != '']
     # 添加普通路线
     for route in data[0]['routes']:
         n: str = route['name']
-        if n.split('|')[0].lower() in TEMP_IGNORED_LINES or \
-                n.lower() in TEMP_IGNORED_LINES:
-            continue
+        # 禁路线
+        number: str = route['number']
+        route_names = [n, n.split('|')[0]]
+        if ('||' in n and n.count('|') > 2) or \
+                ('||' not in n and n.count('|') > 0):
+            eng_name = n.split('|')[1].split('|')[0]
+            if eng_name != '':
+                route_names.append(eng_name)
 
-        if n.count('|') > 1:
-            if n.split('|')[1].split('|')[0].lower() in TEMP_IGNORED_LINES:
+        if number not in ['', ' ']:
+            for tmp_name in route_names[1:]:
+                route_names.append(tmp_name + ' ' + number)
+
+        cont = False
+        for x in route_names:
+            x = x.lower().strip()
+            if x in TEMP_IGNORED_LINES:
+                cont = True
+                break
+
+            if x.isascii():
                 continue
+
+            simp1 = opencc3.convert(x)
+            if simp1 in TEMP_IGNORED_LINES:
+                cont = True
+                break
+
+            simp2 = opencc3.convert(opencc4.convert(x))
+            if simp2 in TEMP_IGNORED_LINES:
+                cont = True
+                break
+
+        if cont is True:
+            continue
 
         if (not CALCULATE_HIGH_SPEED) and route['type'] == 'train_high_speed':
             continue
@@ -934,9 +965,10 @@ def create_graph(data: list, IGNORED_LINES: bool,
             route_name = r[0]
             duration = r[1]
             waiting_time = r[2]
-            if abs(duration + waiting_time - min_time) <= 60:
-                G.add_edge(u, v, weight=duration + waiting_time,
-                           name=route_name, waiting=waiting_time)
+            weight = duration + waiting_time
+            if abs(weight - min_time) <= 60 and weight > 0:
+                G.add_edge(u, v, weight=weight, name=route_name,
+                           waiting=waiting_time)
 
     # 添加野外行走 (无铁路连接)
     if CALCULATE_WALKING_WILD is True:
