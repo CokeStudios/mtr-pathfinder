@@ -45,7 +45,6 @@ ROUTE_INTERVAL_DATA = Queue()
 semaphore = BoundedSemaphore(25)
 original = {}
 tmp_names = {}
-tmp_names2 = {}
 opencc1 = OpenCC('s2t')
 opencc2 = OpenCC('t2jp')
 opencc3 = OpenCC('t2s')
@@ -298,10 +297,10 @@ def gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER) -> None:
                         dep_s_list.append((item[y + 1] - item[y]) / 1000)
                     if x in dep_dict_per_route:
                         dep_dict_per_route[x] += [sum(dep_s_list) /
-                                                len(dep_s_list)]
+                                                  len(dep_s_list)]
                     else:
                         dep_dict_per_route[x] = [sum(dep_s_list) /
-                                                len(dep_s_list)]
+                                                 len(dep_s_list)]
 
         for x in dep_dict_per_route_:
             if x not in dep_dict_per_route:
@@ -1097,7 +1096,7 @@ def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
 
         sta1_name = stations[station_1]['name'].replace('|', ' ')
         sta2_name = stations[station_2]['name'].replace('|', ' ')
-        sta1_id = station_name_to_id(data, sta1_name, {})
+        sta1_id = stations[station_1]['id']
         for route_name in route_name_list:
             for x in duration_list:
                 if route_name == x[0]:
