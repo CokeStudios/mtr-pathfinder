@@ -1601,6 +1601,8 @@ def run():
     CALCULATE_WALKING_WILD: bool = False
     # 仅允许轻轨，默认值为False
     ONLY_LRT: bool = False
+    # 计算理论最快路线，不考虑等车时间，默认值为False
+    IN_THEORY: bool = False
 
     # 输出的图片中是否显示详细信息，默认值为False
     DETAIL: bool = False
@@ -1614,8 +1616,8 @@ def run():
          TRANSFER_ADDITION, WILD_ADDITION, STATION_TABLE,
          ORIGINAL_IGNORED_LINES, UPDATE_DATA, GEN_ROUTE_INTERVAL,
          IGNORED_LINES, AVOID_STATIONS, CALCULATE_HIGH_SPEED,
-         CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT, DETAIL, MTR_VER,
-         show=True)
+         CALCULATE_BOAT, CALCULATE_WALKING_WILD, ONLY_LRT, IN_THEORY, DETAIL,
+         MTR_VER, show=True)
 
 
 if __name__ == '__main__':
