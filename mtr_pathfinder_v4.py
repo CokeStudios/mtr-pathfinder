@@ -504,8 +504,10 @@ def load_tt(tt_dict: dict[tuple], data, start, end, departure_time: int,
         tt = tt_dict[route_id]
         for departure in departures:
             departure += tz_offset
-            if departure >= max_time or \
-                    (max_time > 86400 and departure >= max_time - 86400):
+            # if departure >= max_time or \
+            #         (max_time > 86400 and departure >= max_time - 86400):
+            #     break
+            if departure >= max_time:
                 break
 
             trips[str(trip_no)] = {}
