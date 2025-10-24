@@ -987,7 +987,7 @@ def main(station1: str, station2: str, LINK: str,
          CALCULATE_WALKING_WILD: bool = False, ONLY_LRT: bool = False,
          DETAIL: bool = False, MAX_HOUR=3, timetable=None, gen_image=True,
          show=False, departure_time=None, tz=0,
-         timeout_min=2) -> Union[str, False, None]:
+         timeout_min=2) -> Union[tuple[Image.Image, str], bool, None]:
     '''
     Main function. You can call it in your own code.
     Output:

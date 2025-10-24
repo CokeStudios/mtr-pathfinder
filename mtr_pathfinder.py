@@ -1485,7 +1485,7 @@ def main(station1: str, station2: str, LINK: str,
          CALCULATE_BOAT: bool = True, CALCULATE_WALKING_WILD: bool = False,
          ONLY_LRT: bool = False, IN_THEORY: bool = False, DETAIL: bool = False,
          MTR_VER: int = 3, G=None, gen_image=True, show=False,
-         cache=True) -> Union[tuple[Image.Image, str], False, None]:
+         cache=True) -> Union[tuple[Image.Image, str], bool, None]:
     '''
     Main function. You can call it in your own code.
     Output:
