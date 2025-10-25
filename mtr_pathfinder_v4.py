@@ -366,18 +366,17 @@ def gen_departure(link: str, DEP_PATH) -> None:
     Download the departures.
     '''
     link = link.rstrip('/') + '/mtr/api/map/departures?dimension=0'
-    departures = requests.get(link).json()['data']['departures']
+    data = requests.get(link).json()['data']
+    departures = data['departures']
+    offset = data['cachedResponseTime']
     dep_dict: dict[str, list[int]] = {}
     for x in departures:
         dep_list = set()
         for y in x['departures']:
             # deviation = y['deviation']
             for z in y['departures']:
-                # dep = round((z + deviation) / 1000)
-                dep = round(z / 1000)
-                while dep < 0:
-                    dep += 86400
-
+                # dep = round((z + offset % 86400000 + deviation) / 1000)
+                dep = round((z + offset % 86400000) / 1000) % 86400
                 dep_list.add(dep)
 
         dep_list = list(sorted(dep_list))
@@ -436,99 +435,6 @@ def station_num_to_name(data: dict, sta: str) -> str:
 
 def sta_id(station: str) -> int:
     return int('0x' + station, 16)
-
-
-def load_tt(tt_dict: dict[tuple], data, start, end, departure_time: int,
-            tz_offset: float, DEP_PATH, STATION_TABLE, TRANSFER_ADDITION,
-            CALCULATE_WALKING_WILD, WILD_ADDITION, MAX_HOUR):
-    tz_offset = int(tz_offset * 60 * 60)
-    with open(DEP_PATH, 'r', encoding='utf-8') as f:
-        dep_data: dict[str, list[int]] = json.load(f)
-
-    timetable: list[tuple] = []
-    start_station = station_name_to_id(data, start, STATION_TABLE)
-    end_station = station_name_to_id(data, end, STATION_TABLE)
-    if not (start_station and end_station):
-        return []
-
-    # 添加起点出站换乘
-    ss = data['stations'][start_station]['station']
-    connections = data['stations'][start_station]['connections']
-    if start in TRANSFER_ADDITION:
-        connections += data['stations'][TRANSFER_ADDITION[start]]
-    for con in connections:
-        if con not in data['transfer_time'][start_station]:
-            continue
-
-        t2 = round(data['transfer_time'][start_station][con])
-        dist = data['transfer_dist'][start_station][con]
-        con = data['stations'][con]['station']
-        timetable.append(
-            (sta_id(ss), sta_id(con),
-             departure_time, departure_time + t2,
-             [f'出站换乘步行 Walk {round(dist, 2)}m', '']))
-
-    if CALCULATE_WALKING_WILD is True:
-        # 添加起点非出站换乘（越野）
-        connections = list(data['stations'].keys())
-        if start in WILD_ADDITION:
-            connections += data['stations'][WILD_ADDITION[start]]
-        for con in connections:
-            if start_station not in data['transfer_time']:
-                continue
-
-            if con not in data['transfer_time'][start_station]:
-                continue
-
-            t2 = round(data['transfer_time'][start_station][con])
-            dist = data['transfer_dist'][start_station][con]
-            con = data['stations'][con]['station']
-            timetable.append(
-                (sta_id(ss), sta_id(con),
-                 departure_time, departure_time + t2,
-                 [f'步行 Walk {round(dist, 2)}m', '']))
-
-    max_time = departure_time + MAX_HOUR * 60 * 60
-    trips: dict[str, dict[str, int]] = {}
-    trip_no = 0
-    for route_id, departures in dep_data.items():
-        if route_id not in tt_dict:
-            continue
-
-        if tz_offset > 0:
-            departures += [x + 86400 for x in departures if x <= tz_offset]
-        elif tz_offset < 0:
-            departures = [x - 86400 for x in departures
-                          if x >= 86400 - tz_offset] + departures
-
-        tt = tt_dict[route_id]
-        for departure in departures:
-            departure += tz_offset
-            # if departure >= max_time or \
-            #         (max_time > 86400 and departure >= max_time - 86400):
-            #     break
-            if departure >= max_time:
-                break
-
-            trips[str(trip_no)] = {}
-            for t in tt:
-                _t = list(t)
-                _t[2] += departure
-                _t[3] += departure
-                if max_time - 86400 < _t[2] < departure_time:
-                    continue
-
-                if _t[4][1] != '':  # Not walking
-                    _t += [trip_no]
-                    trips[str(trip_no)][str(_t[0])] = _t[2]
-
-                timetable.append(_t)
-
-            trip_no += 1
-
-    # IMPORTANT !!! Connections must be sorted by departure/arrival time.
-    timetable.sort(key=itemgetter(2))
-    return timetable, trips
 
 
 def gen_timetable(data: dict, IGNORED_LINES: bool,
@@ -605,19 +511,23 @@ def gen_timetable(data: dict, IGNORED_LINES: bool,
 
         real_ids = [x['id'] for x in route['stations']]
         dwells = [x['dwellTime'] for x in route['stations']]
-        dep = 0
+        if len(dwells) > 0:
+            dep = -round(dwells[-1] / 1000)
+        else:
+            dep = 0
+
         tt = []
-        for i in range(len(station_ids) - 1):
-            station1 = station_ids[i]
-            station2 = station_ids[i + 1]
-            _station1 = real_ids[i]
-            _station2 = real_ids[i + 1]
-            dur = round(durations[i] / 1000)
-            dep_time = dep
-            arr_time = dep + dur
-            dwell = round(dwells[i + 1] / 1000)
-            dep += dur
-            dep += dwell
+        for i in range(len(station_ids) - 1, 0, -1):
+            station1 = station_ids[i - 1]
+            station2 = station_ids[i]
+            _station1 = real_ids[i - 1]
+            _station2 = real_ids[i]
+            dur = round(durations[i - 1] / 1000)
+            arr_time = dep
+            dep_time = dep - dur
+            dwell = round(dwells[i - 1] / 1000)
+            dep -= dur
+            dep -= dwell
             if station1 == station2:
                 continue
 
@@ -677,6 +587,104 @@ def gen_timetable(data: dict, IGNORED_LINES: bool,
                 pickle.dump(tt_dict, f)
 
     return tt_dict
+
+
+def load_tt(tt_dict: dict[tuple], data, start, end, departure_time: int,
+            DEP_PATH, STATION_TABLE, TRANSFER_ADDITION,
+            CALCULATE_WALKING_WILD, WILD_ADDITION, MAX_HOUR):
+    with open(DEP_PATH, 'r', encoding='utf-8') as f:
+        dep_data: dict[str, list[int]] = json.load(f)
+
+    timetable: list[tuple] = []
+    start_station = station_name_to_id(data, start, STATION_TABLE)
+    end_station = station_name_to_id(data, end, STATION_TABLE)
+    if not (start_station and end_station):
+        return []
+
+    # 添加起点出站换乘
+    ss = data['stations'][start_station]['station']
+    connections = data['stations'][start_station]['connections']
+    if start in TRANSFER_ADDITION:
+        connections += data['stations'][TRANSFER_ADDITION[start]]
+    for con in connections:
+        if con not in data['transfer_time'][start_station]:
+            continue
+
+        t2 = round(data['transfer_time'][start_station][con])
+        dist = data['transfer_dist'][start_station][con]
+        con = data['stations'][con]['station']
+        timetable.append(
+            (sta_id(ss), sta_id(con),
+             departure_time, departure_time + t2,
+             [f'出站换乘步行 Walk {round(dist, 2)}m', '']))
+
+    if CALCULATE_WALKING_WILD is True:
+        # 添加起点非出站换乘（越野）
+        connections = list(data['stations'].keys())
+        if start in WILD_ADDITION:
+            connections += data['stations'][WILD_ADDITION[start]]
+        for con in connections:
+            if start_station not in data['transfer_time']:
+                continue
+
+            if con not in data['transfer_time'][start_station]:
+                continue
+
+            t2 = round(data['transfer_time'][start_station][con])
+            dist = data['transfer_dist'][start_station][con]
+            con = data['stations'][con]['station']
+            timetable.append(
+                (sta_id(ss), sta_id(con),
+                 departure_time, departure_time + t2,
+                 [f'步行 Walk {round(dist, 2)}m', '']))
+
+    max_time = departure_time + MAX_HOUR * 60 * 60
+    trips: dict[str, dict[str, int]] = {}
+    trip_no = 0
+    for route_id, departures in dep_data.items():
+        if route_id not in tt_dict:
+            continue
+
+        if max_time > 86400:
+            departures += [x + 86400 for x in departures if x <= max_time - 86400]
+
+        tt = tt_dict[route_id]
+        for departure in departures:
+            if departure >= max_time:
+                break
+
+            trips[str(trip_no)] = {}
+
+            for t in tt:
+                _t = list(t)
+                _t[2] += departure
+                _t[3] += departure
+                if _t[2] < 0:
+                    _t[2] += 86400
+                    _t[3] += 86400
+
+                if max_time - 86400 < _t[2] < departure_time:
+                    continue
+
+                if _t[4][1] != '':  # Not walking
+                    _t += [trip_no]
+                    trips[str(trip_no)][str(_t[0])] = _t[2]
+
+                timetable.append(_t)
+
+                # if max_time > 86400 and departure <= max_time - 86400:
+                #     _t[2] += 86400
+                #     _t[3] += 86400
+                #     if _t[4][1] != '':  # Not walking
+                #         trips[str(trip_no)][str(_t[0])] = _t[2]
+
+                #     timetable.append(_t)
+
+            trip_no += 1
+
+    # IMPORTANT !!! Connections must be sorted by departure/arrival time.
+    timetable.sort(key=itemgetter(2))
+    return timetable, trips
 
 
 def process_path(result: list[tuple], start: str, end: str,
@@ -1007,6 +1015,8 @@ def main(station1: str, station2: str, LINK: str,
 
         departure_time = round(t1.timestamp())
         departure_time += 10  # 寻路时间
+        while departure_time < 0:
+            departure_time += 86400
 
     IGNORED_LINES += ORIGINAL_IGNORED_LINES
     STATION_TABLE = {x.lower(): y.lower() for x, y in STATION_TABLE.items()}
@@ -1014,12 +1024,18 @@ def main(station1: str, station2: str, LINK: str,
         LINK = LINK.rstrip('/index.html')
 
     if UPDATE_DATA is True or (not os.path.exists(LOCAL_FILE_PATH)):
+        if LINK == '':
+            raise ValueError('Railway System Map link is empty')
+
         data = fetch_data(LINK, LOCAL_FILE_PATH, MAX_WILD_BLOCKS)
     else:
         with open(LOCAL_FILE_PATH, encoding='utf-8') as f:
             data = json.load(f)
 
     if GEN_DEPARTURE is True or (not os.path.exists(DEP_PATH)):
+        if LINK == '':
+            raise ValueError('Railway System Map link is empty')
+
         gen_departure(LINK, DEP_PATH)
 
     version1 = strftime('%Y%m%d-%H%M',
@@ -1036,7 +1052,7 @@ def main(station1: str, station2: str, LINK: str,
             STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION)
 
     tt, trips = load_tt(timetable, data, station1, station2, departure_time,
-                        tz, DEP_PATH, STATION_TABLE, TRANSFER_ADDITION,
+                        DEP_PATH, STATION_TABLE, TRANSFER_ADDITION,
                         CALCULATE_WALKING_WILD, WILD_ADDITION, MAX_HOUR)
 
     csa = CSA(len(data['stations']), tt, timeout_min)
