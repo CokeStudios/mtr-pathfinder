@@ -285,11 +285,27 @@ def fetch_data(link: str, LOCAL_FILE_PATH, MAX_WILD_BLOCKS) -> str:
                 'transfer_time': {}, 'transfer_dist': {}}
     for d in data['routes']:
         data_new['routes'][d['id']] = d
+        lengths = []
+        last_x = None
         for x in d['stations']:
             if x['id'] in data_new['station_routes']:
                 data_new['station_routes'][x['id']] += [d['id']]
             else:
                 data_new['station_routes'][x['id']] = [d['id']]
+
+            if last_x is not None:
+                x1 = last_x['x']
+                y1 = last_x['y']
+                z1 = last_x['z']
+                x2 = x['x']
+                y2 = x['y']
+                z2 = x['z']
+                lengths.append(((x1 - x2) ** 2 + (y1 - y2) ** 2 +
+                                (z1 - z2) ** 2) ** 0.5)
+
+            last_x = x
+
+        data_new['routes'][d['id']]['lengths'] = lengths
 
     i = 0
     for d in data['stations']:
@@ -544,10 +560,13 @@ def gen_timetable(data: dict, IGNORED_LINES: bool,
             if _station2 in TRANSFER_ADDITION:
                 connections += data['stations'][TRANSFER_ADDITION[_station2]]
             for con in connections:
-                if con not in data['transfer_time'][_station2]:
+                if con in avoid_ids:
                     continue
 
-                if con in avoid_ids:
+                if _station2 not in data['transfer_time']:
+                    continue
+
+                if con not in data['transfer_time'][_station2]:
                     continue
 
                 t2 = round(data['transfer_time'][_station2][con])
@@ -563,13 +582,13 @@ def gen_timetable(data: dict, IGNORED_LINES: bool,
                 if _station2 in WILD_ADDITION:
                     connections += data['stations'][WILD_ADDITION[_station2]]
                 for con in connections:
+                    if con in avoid_ids:
+                        continue
+
                     if _station2 not in data['transfer_time']:
                         continue
 
                     if con not in data['transfer_time'][_station2]:
-                        continue
-
-                    if con in avoid_ids:
                         continue
 
                     t2 = round(data['transfer_time'][_station2][con])
@@ -1015,8 +1034,8 @@ def main(station1: str, station2: str, LINK: str,
 
         departure_time = round(t1.timestamp())
         departure_time += 10  # 寻路时间
-        while departure_time < 0:
-            departure_time += 86400
+
+    departure_time %= 86400
 
     IGNORED_LINES += ORIGINAL_IGNORED_LINES
     STATION_TABLE = {x.lower(): y.lower() for x, y in STATION_TABLE.items()}
