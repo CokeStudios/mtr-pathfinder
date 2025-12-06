@@ -834,10 +834,11 @@ def save_image(route_type: RouteType, every_route_time: list,
         pattern.append((ImagePattern.TEXT, time2))  # 到站时间
 
     pattern.append((ImagePattern.STATION, route_data[1], route_data[2]))
+    # full_time = every_route_time[-1][6] - every_route_time[0][5]
+    # 总时长从出发时间开始算，不从发车时间开始算
+    full_time = every_route_time[-1][6] - departure_time
     return generate_image(pattern, route_type, BASE_PATH,
-                          version1, version2,
-                          every_route_time[-1][6] - every_route_time[0][5],
-                          show)
+                          version1, version2, full_time, show)
 
 
 def calculate_height_width(pattern: list[list[ImagePattern]],

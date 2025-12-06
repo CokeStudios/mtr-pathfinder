@@ -875,12 +875,18 @@ def create_graph(data: list, IGNORED_LINES: bool,
                 if route_type == RouteType.WAITING:
                     wait = float(intervals[n])
                     if (station_1, station_2) not in edges_dict:
-                        edges_dict[(station_1, station_2)] = [
-                            (dur, wait, route['name'])]
+                        edges_dict[(station_1, station_2)] = []
+
+                    edges_dict[(station_1, station_2)].append(
+                        (dur, wait, route['name']))
+
+                    original_tuple = (route['name'], station_1, station_2)
+                    if original_tuple in original:
+                        dur1 = original[original_tuple]
+                        if dur < dur1:
+                            original[original_tuple] = dur
                     else:
-                        edges_dict[(station_1, station_2)].append(
-                            (dur, wait, route['name']))
-                    original[(station_1, station_2, route['name'])] = dur
+                        original[original_tuple] = dur
                 else:
                     if (station_1, station_2) in edges_attr_dict:
                         edges_attr_dict[(station_1, station_2)].append(
@@ -953,7 +959,7 @@ def create_graph(data: list, IGNORED_LINES: bool,
                     route_name = waiting_walking_dict[(s1, s2)][1]
                     dur = waiting_walking_dict[(s1, s2)][0]
                     final_routes.append(route_name)
-                    original[(s1, s2, route_name)] = dur
+                    original[(route_name, s1, s2)] = dur
 
             edges_attr_dict[(s1, s2)] = [(final_routes, min_dur, sum_int)]
 
@@ -1106,8 +1112,8 @@ def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
                 for x in duration_list:
                     for y in x[0]:
                         if route_name == y:
-                            duration = original[(station_1, station_2,
-                                                 route_name)]
+                            duration = original[(route_name,
+                                                 station_1, station_2)]
                             break
 
             for x in waiting_list:
