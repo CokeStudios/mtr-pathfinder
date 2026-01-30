@@ -677,6 +677,7 @@ def load_tt(tt_dict: dict[tuple], data, start, end, departure_time: int,
                 break
 
             trips[str(trip_no)] = {}
+
             for t in tt:
                 _t = list(t)
                 _t[2] += departure
@@ -692,7 +693,6 @@ def load_tt(tt_dict: dict[tuple], data, start, end, departure_time: int,
                     _t += [trip_no]
                     trips[str(trip_no)][str(_t[0])] = _t[2]
 
-                _t = tuple(_t)
                 timetable.append(_t)
 
                 # if max_time > 86400 and departure <= max_time - 86400:
