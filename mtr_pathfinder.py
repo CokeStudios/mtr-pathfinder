@@ -578,11 +578,11 @@ def get_app_time_v4(route: dict,
     return t
 
 
-def create_graph(data: list, IGNORED_LINES: bool,
+def create_graph(data: list, IGNORED_LINES: list[str],
                  CALCULATE_HIGH_SPEED: bool, CALCULATE_BOAT: bool,
                  CALCULATE_WALKING_WILD: bool, ONLY_LRT: bool,
                  AVOID_STATIONS: list, route_type: RouteType,
-                 original_ignored_lines: list,
+                 original_ignored_lines: list[str],
                  INTERVAL_PATH: str,
                  version1: str, version2: str,
                  LOCAL_FILE_PATH, STATION_TABLE,
@@ -599,12 +599,16 @@ def create_graph(data: list, IGNORED_LINES: bool,
         os.makedirs('mtr_pathfinder_temp')
 
     filename = ''
+    m = hashlib.md5()
     if cache is True and IGNORED_LINES == original_ignored_lines and \
             CALCULATE_BOAT is True and ONLY_LRT is False and \
             AVOID_STATIONS == [] and route_type == RouteType.WAITING:
+        for s in original_ignored_lines:
+            m.update(s.encode('utf-8'))
+
         filename = f'mtr_pathfinder_temp{os.sep}' + \
-            f'{int(CALCULATE_HIGH_SPEED)}{int(CALCULATE_WALKING_WILD)}' + \
-            f'-{version1}-{version2}.dat'
+            f'3{int(CALCULATE_HIGH_SPEED)}{int(CALCULATE_WALKING_WILD)}' + \
+            f'-{version1}-{version2}-{m.hexdigest()}.dat'
         if os.path.exists(filename):
             with open(filename, 'rb') as f:
                 tup = pickle.load(f)

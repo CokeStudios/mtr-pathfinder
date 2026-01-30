@@ -453,11 +453,11 @@ def sta_id(station: str) -> int:
     return int('0x' + station, 16)
 
 
-def gen_timetable(data: dict, IGNORED_LINES: bool,
+def gen_timetable(data: dict, IGNORED_LINES: list[str],
                   CALCULATE_HIGH_SPEED: bool, CALCULATE_BOAT: bool,
                   CALCULATE_WALKING_WILD: bool, ONLY_LRT: bool,
                   AVOID_STATIONS: list, route_type: RouteType,
-                  original_ignored_lines: list, DEP_PATH: str,
+                  original_ignored_lines: list[str], DEP_PATH: str,
                   version1: str, version2: str,
                   STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION
                   ) -> list[tuple]:
@@ -471,12 +471,16 @@ def gen_timetable(data: dict, IGNORED_LINES: bool,
         dep_data: dict[str, list[int]] = json.load(f)
 
     filename = ''
+    m = hashlib.md5()
     if IGNORED_LINES == original_ignored_lines and \
             CALCULATE_BOAT is True and ONLY_LRT is False and \
             AVOID_STATIONS == [] and route_type == RouteType.REAL_TIME:
+        for s in original_ignored_lines:
+            m.update(s.encode('utf-8'))
+
         filename = f'mtr_pathfinder_temp{os.sep}' + \
-            f'{int(CALCULATE_HIGH_SPEED)}{int(CALCULATE_WALKING_WILD)}' + \
-            f'-{version1}-{version2}.dat'
+            f'4{int(CALCULATE_HIGH_SPEED)}{int(CALCULATE_WALKING_WILD)}' + \
+            f'-{version1}-{version2}-{m.hexdigest()}.dat'
         if os.path.exists(filename):
             with open(filename, 'r+b') as f:
                 mmapped_file = mmap.mmap(f.fileno(), 0)
@@ -673,7 +677,6 @@ def load_tt(tt_dict: dict[tuple], data, start, end, departure_time: int,
                 break
 
             trips[str(trip_no)] = {}
-
             for t in tt:
                 _t = list(t)
                 _t[2] += departure
@@ -689,6 +692,7 @@ def load_tt(tt_dict: dict[tuple], data, start, end, departure_time: int,
                     _t += [trip_no]
                     trips[str(trip_no)][str(_t[0])] = _t[2]
 
+                _t = tuple(_t)
                 timetable.append(_t)
 
                 # if max_time > 86400 and departure <= max_time - 86400:
