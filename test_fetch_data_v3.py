@@ -8,8 +8,8 @@ MTR_VER: int = 3
 LINK: str = ''
 
 link_hash = hashlib.md5(LINK.encode('utf-8')).hexdigest()
-LOCAL_FILE_PATH = f'mtr-station-data-{link_hash}-{MTR_VER}.json'
-INTERVAL_PATH = f'mtr-route-interval-data-{link_hash}-{MTR_VER}.json'
+LOCAL_FILE_PATH = f'mtr-station-data-{link_hash}-mtr{MTR_VER}-v3.json'
+INTERVAL_PATH = f'mtr-route-data-{link_hash}-mtr{MTR_VER}-v3.json'
 
 fetch_data(LINK, LOCAL_FILE_PATH, MTR_VER)
 gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER)
