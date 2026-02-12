@@ -1,0 +1,5 @@
+fonttools
+networkx
+OpenCC==1.1.1
+Pillow
+Requests

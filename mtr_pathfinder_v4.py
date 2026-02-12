@@ -1130,8 +1130,8 @@ def run():
 
     # 文件设置
     link_hash = hashlib.md5(LINK.encode('utf-8')).hexdigest()
-    LOCAL_FILE_PATH = f'mtr-station-data-{link_hash}.json'
-    DEP_PATH = f'mtr-route-data-{link_hash}.json'
+    LOCAL_FILE_PATH = f'mtr-station-data-{link_hash}-mtr4-v4.json'
+    DEP_PATH = f'mtr-route-data-{link_hash}-mtr4-v4.json'
     BASE_PATH = 'mtr_pathfinder_data'
     PNG_PATH = 'mtr_pathfinder_data'
 
