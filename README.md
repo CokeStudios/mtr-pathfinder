@@ -1,15 +1,15 @@
 ## Install requirements 安装依赖项
-For Python 3.7 - 3.12 only.
+For Python 3.9 + only.
 
-需 Python 3.7 - 3.12。
+需 Python 3.9 或更高版本。
 
 ```
 pip3 install -U fontTools opencc pillow networkx requests
 ```
 
-If there's an error, please try installing older versions of OpenCC.
+If there's an error, please try installing older versions of OpenCC. According to test results, version 1.1.1 of OpenCC can be successfully installed on Python 3.13, and the program can run as it should be.
 
-如报错，请尝试安装旧版 OpenCC。
+如报错，请尝试安装旧版 OpenCC。经测试，Python 3.13 能够安装 1.1.1 版本的 OpenCC ，且程序能够正常运行。
 
 ## Usage 使用
 Download the repo zip.
@@ -22,8 +22,8 @@ You can also call ```main()``` in other files.
 
 下载仓库 zip。
 
-如果使用 MTR 3.x.x / 4.0.0（*寻路程序 v3.0.0*），编辑 ```mtr_pathfinder.py``` 中的 ```run()``` 以更改参数，运行 ```mtr_pathfinder.py``` 即可寻路。
+如果使用 MTR 3.x / 4.0（*寻路程序 v3*），编辑 ```mtr_pathfinder.py``` 中的 ```run()``` 以更改参数，运行 ```mtr_pathfinder.py``` 即可寻路。
 
-如果使用 MTR 4.0.0 **实时寻路**（*寻路程序 v4.0.0*），编辑 ```mtr_pathfinder_v4.py``` 中的 ```run()``` 以更改参数，运行 ```mtr_pathfinder_v4.py``` 即可寻路。
+如果使用 MTR 4.0 **实时寻路**（*寻路程序 v4*），编辑 ```mtr_pathfinder_v4.py``` 中的 ```run()``` 以更改参数，运行 ```mtr_pathfinder_v4.py``` 即可寻路。
 
 也可以在其他文件中调用 ```main()```。
