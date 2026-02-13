@@ -2,12 +2,12 @@ from mtr_pathfinder_v4 import main
 import hashlib
 
 # 出发、到达车站
-station1 = 'Spawn'
-station2 = 'Sundogs'
+station1 = ''
+station2 = ''
 
 # 地图设置
 # 在线线路图网址，结尾删除"/"
-LINK: str = "https://letsplay.minecrafttransitrailway.com/system-map"
+LINK: str = ""
 # 旅途的最长时间，默认值为3
 MAX_HOUR: int = 3
 # 从A站到B站，非出站换乘（越野）的最远步行距离，默认值为1500
@@ -26,8 +26,8 @@ ORIGINAL_IGNORED_LINES: list = []
 
 # 文件设置
 link_hash = hashlib.md5(LINK.encode('utf-8')).hexdigest()
-LOCAL_FILE_PATH = f'mtr-station-data-{link_hash}.json'
-DEP_PATH = f'mtr-route-data-{link_hash}.json'
+LOCAL_FILE_PATH = f'mtr-station-data-{link_hash}-mtr4-v4.json'
+DEP_PATH = f'mtr-route-departure-data-{link_hash}-mtr4-v4.json'
 BASE_PATH = 'mtr_pathfinder_data'
 PNG_PATH = 'mtr_pathfinder_data'
 
