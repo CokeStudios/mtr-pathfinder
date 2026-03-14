@@ -1133,6 +1133,7 @@ def remove_duplicate(data, ert):
                     dwells = [round(y['dwellTime'] / 1000)
                                 for y in stations]
                     i1 = -1
+                    i2 = None
                     while True:
                         try:
                             i1 = sta_ids.index(sta1, i1 + 1)
@@ -1145,6 +1146,9 @@ def remove_duplicate(data, ert):
                             pass
                         else:
                             break
+
+                    if i2 is None:
+                        return list(chain(*ert))
 
                     dwell = sum(dwells[i1 + 1:i2])
                     old_leg[k][4] = old_leg[k][4][:3]
