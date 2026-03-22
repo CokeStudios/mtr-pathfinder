@@ -817,11 +817,15 @@ def process_path(result: list[tuple], start: str, end: str,
     for x in path:
         station_1 = x[0]
         station_2 = x[1]
-        sta1_name = station_num_to_name(data, station_1).replace('|', ' ')
-        sta2_name = station_num_to_name(data, station_2).replace('|', ' ')
+        sta1_name = station_num_to_name(data, station_1)
+        sta1_id = station_name_to_id(data, sta1_name, {}, False)
+        sta1_name = sta1_name.replace('|', ' ')
+        sta2_name = station_num_to_name(data, station_2)
+        sta2_id = station_name_to_id(data, sta2_name, {}, False)
+        sta2_name = sta2_name.replace('|', ' ')
         route_name = x[4][0]
         if route_name in data['routes']:
-            z = data['routes'][route_name]
+            z: dict[str, list] = data['routes'][route_name]
             route_name = data['routes'][route_name]['name']
             route = (z['number'] + ' ' + route_name.split('||')[0]).strip()
             route = route.replace('|', ' ')
@@ -839,7 +843,24 @@ def process_path(result: list[tuple], start: str, end: str,
                 t1_name = '(逆时针) ' + t1_name
                 t2_name += ' (Anticlockwise)'
             terminus = (t1_name, t2_name)
-            platform = x[4][2]
+            i2 = 0
+            sta_ids = [x['id'] for x in z['stations']]
+            while True:
+                try:
+                    sta2_index = sta_ids.index(sta2_id, i2)
+                    i2 = sta2_index + 1
+                    try:
+                        sta1_index = [i for (i, x) in enumerate(sta_ids[:i2])
+                                      if x == sta1_id][-1]
+                    except ValueError:
+                        pass
+                    else:
+                        platform = z['stations'][sta1_index]['name']
+                        break
+
+                except ValueError:
+                    platform = None
+                    break
 
             color = hex(z['color']).lstrip('0x').rjust(6, '0')
             train_type = z['type']
