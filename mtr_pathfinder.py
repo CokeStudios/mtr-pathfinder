@@ -953,10 +953,16 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
 
     if route_type == RouteType.WAITING:
         for tup, dur_tup in edges_dict.items():
-            dur = [x[0] for x in dur_tup]
-            wait = [x[1] for x in dur_tup]
-            routes = [x[2] for x in dur_tup]
-            platforms = [x[3] for x in dur_tup]
+            dur = []
+            wait = []
+            routes = []
+            platforms = []
+            for x in dur_tup:
+                dur.append(x[0])
+                wait.append(x[1])
+                routes.append(x[2])
+                platforms.append(x[3])
+
             final_wait = []
             final_routes = []
             min_dur = min(dur)
@@ -1068,15 +1074,53 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
     return G
 
 
+def gen_all_caches(original_ignored_lines: list[str], LOCAL_FILE_PATH,
+                   INTERVAL_PATH, STATION_TABLE, WILD_ADDITION,
+                   TRANSFER_ADDITION, MAX_WILD_BLOCKS, MTR_VER):
+    with open(LOCAL_FILE_PATH, encoding='utf-8') as f:
+        data = json.load(f)
+
+    version1 = strftime('%Y%m%d-%H%M',
+                        gmtime(os.path.getmtime(LOCAL_FILE_PATH)))
+    version2 = strftime('%Y%m%d-%H%M',
+                        gmtime(os.path.getmtime(INTERVAL_PATH)))
+
+    IGNORED_LINES = original_ignored_lines
+    create_graph(data, IGNORED_LINES, [], True, True, False, False, [],
+                 RouteType.WAITING, original_ignored_lines,
+                 INTERVAL_PATH, version1, version2, LOCAL_FILE_PATH,
+                 STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION,
+                 MAX_WILD_BLOCKS, MTR_VER, cache=True)
+
+    create_graph(data, IGNORED_LINES, [], True, True, True, False, [],
+                 RouteType.WAITING, original_ignored_lines,
+                 INTERVAL_PATH, version1, version2, LOCAL_FILE_PATH,
+                 STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION,
+                 MAX_WILD_BLOCKS, MTR_VER, cache=True)
+
+    create_graph(data, IGNORED_LINES, [], False, True, True, False, [],
+                 RouteType.WAITING, original_ignored_lines,
+                 INTERVAL_PATH, version1, version2, LOCAL_FILE_PATH,
+                 STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION,
+                 MAX_WILD_BLOCKS, MTR_VER, cache=True)
+
+    create_graph(data, IGNORED_LINES, [], False, True, False, False, [],
+                 RouteType.WAITING, original_ignored_lines,
+                 INTERVAL_PATH, version1, version2, LOCAL_FILE_PATH,
+                 STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION,
+                 MAX_WILD_BLOCKS, MTR_VER, cache=True)
+
+
 def find_shortest_route(G: nx.MultiDiGraph, start: str, end: str, data: list,
-                        STATION_TABLE, MTR_VER, route_type: RouteType
-                        ) -> list[str, int, int, int, list]:
+                        STATION_TABLE, MTR_VER, route_type: RouteType,
+                        fuzzy_compare=True) -> list[str, int, int, int, list]:
     '''
     Find the shortest route between two stations.
     '''
 
-    start_station = station_name_to_id(data, start, STATION_TABLE)
-    end_station = station_name_to_id(data, end, STATION_TABLE)
+    start_station = station_name_to_id(data, start,
+                                       STATION_TABLE, fuzzy_compare)
+    end_station = station_name_to_id(data, end, STATION_TABLE, fuzzy_compare)
     if not (start_station and end_station):
         return None, None, None, None, None
 
@@ -1131,7 +1175,7 @@ def remove_duplicate(data, ert):
                     stations = x['stations']
                     sta_ids = [y['id'] for y in stations]
                     dwells = [round(y['dwellTime'] / 1000)
-                                for y in stations]
+                              for y in stations]
                     i1 = -1
                     i2 = None
                     while True:
@@ -1629,15 +1673,49 @@ def main(station1: str, station2: str, LINK: str,
          CALCULATE_WALKING_WILD: bool = False, ONLY_LRT: bool = False,
          IN_THEORY: bool = False, DETAIL: bool = False,
          MTR_VER: int = 3, G=None, gen_image=True, show=False,
-         cache=True) -> Union[tuple[Image.Image, str], bool, None]:
+         cache=True, data_v3=None, fuzzy_compare=True
+         ) -> Union[tuple[Image.Image, str], bool, None]:
     '''
-    Main function. You can call it in your own code.
-    Output:
-    False -- Route not found 找不到路线
-    None -- Incorrect station name(s) 车站输入错误，请重新输入
-    else 其他 -- tuple
-    (image object, base64 str of the generated image)
-    (图片对象, 生成图片的 base64 字符串)
+    Find the shortest path between two stations.
+    Args:
+        station1 (`str`): Origin
+        station2 (`str`): Destination
+        link (`str`): The url of the Transport System Map.
+        LOCAL_FILE_PATH (`str`): stations-and-routes data file path.
+        INTERVAL_PATH (`str`): Route interval file path.
+        BASE_PATH (`str`): Font path. (.../BASE_PATH/fonts/...)
+        PNG_PATH (`str`): The path of the generated image.
+        MAX_WILD_BLOCKS (`int`, optional): The maximum distance of walking outside of the station areas.
+        TRANSFER_ADDITION (`dict`, optional): Add out-of-station transfer options between these stations. "{station1: [station2, station3, ...], ...}"
+        WILD_ADDITION (`dict`, optional): Add walk options between these stations, regardless of MAX_WILD_BLOCKS. "{station1: [station2, station3, ...], ...}"
+        STATION_TABLE (`dict`, optional): Station nickname table. "{Nickname: Actual name, ...}"
+        ORIGINAL_IGNORED_LINES (`list`, optional): Ignore these routes globally.
+        UPDATE_DATA (`bool`, optional): Update stations-and-routes data.
+        GEN_ROUTE_INTERVAL (`bool`, optional): Generate the interval time of all routes.
+        IGNORED_LINES (`list`, optional): Ignore these routes. (User input)
+        ONLY_LINES (`list`, optional): Ignore all the routes except the routes listed.
+        AVOID_STATIONS (`list`, optional): Avoid these stations.
+        CALCULATE_HIGH_SPEED (`bool`, optional): Take into account High Speed Rail routes.
+        CALCULATE_BOAT (`bool`, optional): Take into account all boat routes.
+        CALCULATE_WALKING_WILD (`bool`, optional): Take into account paths that require walking between two stations.
+        ONLY_LRT (`bool`, optional): Ignore all the routes except Light Rail routes during the trip.
+        IN_THEORY (`bool`, optional): Ignore the time spent waiting for the train.
+        DETAIL (`bool`, optional): Show more detailed information in the image.
+        MTR_VER (`int`, optional): The version of MTR mod in the server (3/4)
+        G (`networkx.MultiDiGraph`, optional): The graph for pathfinding.
+        gen_image (`bool`, optional): Generated an image of the route.
+        show (`bool`, optional): Show the generated image.
+        cache (`bool`, optional): Enable cache.
+        data_v3 (`list`, optional): The stations-and-routes data, preventing repeated json.load().
+        fuzzy_compare (`bool`, optional): Enable fuzzy compare when processing station names.
+    Returns:
+        A tuple including the generated image.
+
+        (PIL Image.Image, Converted base64 code)
+
+        If the path cannot be found, it will return False.
+
+        If the stations do not exist, it will return None.
     '''
     if MTR_VER not in [3, 4]:
         raise NotImplementedError('MTR_VER should be 3 or 4')
@@ -1647,14 +1725,17 @@ def main(station1: str, station2: str, LINK: str,
     if LINK.endswith('/index.html'):
         LINK = LINK.rstrip('/index.html')
 
-    if UPDATE_DATA is True or (not os.path.exists(LOCAL_FILE_PATH)):
-        if LINK == '':
-            raise ValueError('Railway System Map link is empty')
+    if data_v3 is None:
+        if UPDATE_DATA is True or (not os.path.exists(LOCAL_FILE_PATH)):
+            if LINK == '':
+                raise ValueError('Railway System Map link is empty')
 
-        data = fetch_data(LINK, LOCAL_FILE_PATH, MTR_VER)
+            data = fetch_data(LINK, LOCAL_FILE_PATH, MTR_VER)
+        else:
+            with open(LOCAL_FILE_PATH, encoding='utf-8') as f:
+                data = json.load(f)
     else:
-        with open(LOCAL_FILE_PATH, encoding='utf-8') as f:
-            data = json.load(f)
+        data = data_v3
 
     if GEN_ROUTE_INTERVAL is True or (not os.path.exists(INTERVAL_PATH)):
         # if MTR_VER == 4:
@@ -1687,8 +1768,8 @@ def main(station1: str, station2: str, LINK: str,
                          MAX_WILD_BLOCKS, MTR_VER, cache)
 
     shortest_path, shortest_distance, waiting_time, riding_time, ert = \
-        find_shortest_route(G, station1, station2,
-                            data, STATION_TABLE, MTR_VER, route_type)
+        find_shortest_route(G, station1, station2, data, STATION_TABLE,
+                            MTR_VER, route_type, fuzzy_compare)
 
     if gen_image is False:
         return ert, shortest_distance

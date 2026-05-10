@@ -1102,11 +1102,45 @@ def main(station1: str, station2: str, LINK: str,
          show=False, departure_time=None, tz=0,
          timeout_min=2) -> Union[tuple[Image.Image, str], bool, None]:
     '''
-    Main function. You can call it in your own code.
-    Output:
-    False -- Route not found 找不到路线
-    None -- Incorrect station name(s) 车站输入错误，请重新输入
-    else 其他 -- base64 str of the generated image 生成图片的 base64 字符串
+    Find the shortest path between two stations.
+    Args:
+        station1 (`str`): Origin
+        station2 (`str`): Destination
+        link (`str`): The url of the Transport System Map.
+        LOCAL_FILE_PATH (`str`): stations-and-routes data file path.
+        DEP_PATH (`str`): departures data file path.
+        BASE_PATH (`str`): Font path. (.../BASE_PATH/fonts/...)
+        PNG_PATH (`str`): The path of the generated image.
+        MAX_WILD_BLOCKS (`int`, optional): The maximum distance of walking outside of the station areas.
+        TRANSFER_ADDITION (`dict`, optional): Add out-of-station transfer options between these stations. "{station1: [station2, station3, ...], ...}"
+        WILD_ADDITION (`dict`, optional): Add walk options between these stations, regardless of MAX_WILD_BLOCKS. "{station1: [station2, station3, ...], ...}"
+        STATION_TABLE (`dict`, optional): Station nickname table. "{Nickname: Actual name, ...}"
+        ORIGINAL_IGNORED_LINES (`list`, optional): Ignore these routes globally.
+        UPDATE_DATA (`bool`, optional): Update stations-and-routes data.
+        GEN_DEPARTURE (`bool`, optional): Generate the departure of all routes.
+        IGNORED_LINES (`list`, optional): Ignore these routes. (User input)
+        ONLY_LINES (`list`, optional): Ignore all the routes except the routes listed.
+        AVOID_STATIONS (`list`, optional): Avoid these stations.
+        CALCULATE_HIGH_SPEED (`bool`, optional): Take into account High Speed Rail routes.
+        CALCULATE_BOAT (`bool`, optional): Take into account all boat routes.
+        CALCULATE_WALKING_WILD (`bool`, optional): Take into account paths that require walking between two stations.
+        ONLY_LRT (`bool`, optional): Ignore all the routes except Light Rail routes during the trip.
+        IN_THEORY (`bool`, optional): Ignore the time spent waiting for the train.
+        DETAIL (`bool`, optional): Show more detailed information in the image.
+        MAX_HOUR (`int`, optional): The maximum hour considered since pathfinding.
+        timetable (`list`, optional): The timetable for pathfinding.
+        gen_image (`bool`, optional): Generated an image of the route.
+        show (`bool`, optional): Show the generated image.
+        departure_time (`int`, optional): The departure time in seconds in a day.
+        tz (`float`, optional): The timezone of the departure time in hours.
+    Returns:
+        A tuple including the generated image.
+
+        (PIL Image.Image, Converted base64 code)
+
+        If the path cannot be found, it will return False.
+
+        If the stations do not exist, it will return None.
     '''
     if departure_time is None:
         dtz = timezone(timedelta(hours=tz))
