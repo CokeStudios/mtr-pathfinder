@@ -516,9 +516,6 @@ def gen_timetable(data: dict, IGNORED_LINES: list[str], ONLY_LINES: list[str],
     '''
     Generate the timetable of all routes.
     '''
-    if not os.path.exists('mtr_pathfinder_temp'):
-        os.makedirs('mtr_pathfinder_temp')
-
     with open(DEP_PATH, 'r', encoding='utf-8') as f:
         dep_data: dict[str, list[int]] = json.load(f)
 
@@ -653,12 +650,47 @@ def gen_timetable(data: dict, IGNORED_LINES: list[str], ONLY_LINES: list[str],
 
         tt_dict[route_id] = tt
 
+    if not os.path.exists('mtr_pathfinder_temp'):
+        os.makedirs('mtr_pathfinder_temp')
+
     if filename != '':
         if not os.path.exists(filename):
             with open(filename, 'wb') as f:
                 pickle.dump(tt_dict, f)
 
     return tt_dict
+
+
+def gen_all_caches(original_ignored_lines: list[str], LOCAL_FILE_PATH,
+                   DEP_PATH, STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION):
+    with open(LOCAL_FILE_PATH, encoding='utf-8') as f:
+        data = json.load(f)
+
+    version1 = strftime('%Y%m%d-%H%M',
+                        gmtime(os.path.getmtime(LOCAL_FILE_PATH)))
+    version2 = strftime('%Y%m%d-%H%M',
+                        gmtime(os.path.getmtime(DEP_PATH)))
+
+    IGNORED_LINES = original_ignored_lines
+    gen_timetable(data, IGNORED_LINES, [], True, True, False, False, [],
+                  RouteType.REAL_TIME, original_ignored_lines,
+                  DEP_PATH, version1, version2,
+                  STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION)
+
+    gen_timetable(data, IGNORED_LINES, [], True, True, True, False, [],
+                  RouteType.REAL_TIME, original_ignored_lines,
+                  DEP_PATH, version1, version2,
+                  STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION)
+
+    gen_timetable(data, IGNORED_LINES, [], False, True, True, False, [],
+                  RouteType.REAL_TIME, original_ignored_lines,
+                  DEP_PATH, version1, version2,
+                  STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION)
+
+    gen_timetable(data, IGNORED_LINES, [], False, True, False, False, [],
+                  RouteType.REAL_TIME, original_ignored_lines,
+                  DEP_PATH, version1, version2,
+                  STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION)
 
 
 def load_tt(tt_dict: dict[tuple], data, start, end, departure_time: int,

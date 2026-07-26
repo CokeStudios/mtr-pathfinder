@@ -635,7 +635,6 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
                  AVOID_STATIONS: list, route_type: RouteType,
                  original_ignored_lines: list[str],
                  INTERVAL_PATH: str,
-                 version1: str, version2: str,
                  LOCAL_FILE_PATH, STATION_TABLE,
                  WILD_ADDITION, TRANSFER_ADDITION,
                  MAX_WILD_BLOCKS, MTR_VER, cache) -> nx.MultiDiGraph:
@@ -646,9 +645,6 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
     with open(INTERVAL_PATH, 'r', encoding='utf-8') as f:
         intervals = json.load(f)
 
-    if not os.path.exists('mtr_pathfinder_temp'):
-        os.makedirs('mtr_pathfinder_temp')
-
     filename = ''
     m = hashlib.md5()
     if cache is True and IGNORED_LINES == original_ignored_lines and \
@@ -657,6 +653,11 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
             route_type == RouteType.WAITING:
         for s in original_ignored_lines:
             m.update(s.encode('utf-8'))
+
+        version1 = strftime('%Y%m%d-%H%M',
+                            gmtime(os.path.getmtime(LOCAL_FILE_PATH)))
+        version2 = strftime('%Y%m%d-%H%M',
+                            gmtime(os.path.getmtime(INTERVAL_PATH)))
 
         filename = f'mtr_pathfinder_temp{os.sep}' + \
             f'3{int(CALCULATE_HIGH_SPEED)}{int(CALCULATE_WALKING_WILD)}' + \
@@ -1066,6 +1067,9 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
                 G.add_edge(u, v, weight=duration, name=route_name,
                            waiting=waiting_time)
 
+    if not os.path.exists('mtr_pathfinder_temp'):
+        os.makedirs('mtr_pathfinder_temp')
+
     if filename != '':
         if not os.path.exists(filename):
             with open(filename, 'wb') as f:
@@ -1080,33 +1084,37 @@ def gen_all_caches(original_ignored_lines: list[str], LOCAL_FILE_PATH,
     with open(LOCAL_FILE_PATH, encoding='utf-8') as f:
         data = json.load(f)
 
-    version1 = strftime('%Y%m%d-%H%M',
-                        gmtime(os.path.getmtime(LOCAL_FILE_PATH)))
-    version2 = strftime('%Y%m%d-%H%M',
-                        gmtime(os.path.getmtime(INTERVAL_PATH)))
+    create_graph(data, [], [], True, True, False, False, [],
+                 RouteType.WAITING, [],
+                 INTERVAL_PATH, LOCAL_FILE_PATH,
+                 STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION,
+                 MAX_WILD_BLOCKS, MTR_VER, cache=False)
+
+    with open(LOCAL_FILE_PATH, encoding='utf-8') as f:
+        data = json.load(f)
 
     IGNORED_LINES = original_ignored_lines
     create_graph(data, IGNORED_LINES, [], True, True, False, False, [],
                  RouteType.WAITING, original_ignored_lines,
-                 INTERVAL_PATH, version1, version2, LOCAL_FILE_PATH,
+                 INTERVAL_PATH, LOCAL_FILE_PATH,
                  STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION,
                  MAX_WILD_BLOCKS, MTR_VER, cache=True)
 
     create_graph(data, IGNORED_LINES, [], True, True, True, False, [],
                  RouteType.WAITING, original_ignored_lines,
-                 INTERVAL_PATH, version1, version2, LOCAL_FILE_PATH,
+                 INTERVAL_PATH, LOCAL_FILE_PATH,
                  STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION,
                  MAX_WILD_BLOCKS, MTR_VER, cache=True)
 
     create_graph(data, IGNORED_LINES, [], False, True, True, False, [],
                  RouteType.WAITING, original_ignored_lines,
-                 INTERVAL_PATH, version1, version2, LOCAL_FILE_PATH,
+                 INTERVAL_PATH, LOCAL_FILE_PATH,
                  STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION,
                  MAX_WILD_BLOCKS, MTR_VER, cache=True)
 
     create_graph(data, IGNORED_LINES, [], False, True, False, False, [],
                  RouteType.WAITING, original_ignored_lines,
-                 INTERVAL_PATH, version1, version2, LOCAL_FILE_PATH,
+                 INTERVAL_PATH, LOCAL_FILE_PATH,
                  STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION,
                  MAX_WILD_BLOCKS, MTR_VER, cache=True)
 
@@ -1763,7 +1771,7 @@ def main(station1: str, station2: str, LINK: str,
                          CALCULATE_HIGH_SPEED, CALCULATE_BOAT,
                          CALCULATE_WALKING_WILD, ONLY_LRT, AVOID_STATIONS,
                          route_type, ORIGINAL_IGNORED_LINES,
-                         INTERVAL_PATH, version1, version2, LOCAL_FILE_PATH,
+                         INTERVAL_PATH, LOCAL_FILE_PATH,
                          STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION,
                          MAX_WILD_BLOCKS, MTR_VER, cache)
 
