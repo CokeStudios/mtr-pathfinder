@@ -277,10 +277,10 @@ def gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER) -> None:
         while not ROUTE_INTERVAL_DATA.empty():
             interval_data_list.append(ROUTE_INTERVAL_DATA.get())
 
-        arrivals = dict(interval_data_list)
+        arrivals_data = dict(interval_data_list)
         dep_dict_per_route: dict[str, list] = {}
         dep_dict_per_route_: dict[str, list] = {}
-        for t, arrivals in arrivals.values():
+        for t, arrivals in arrivals_data.values():
             dep_dict_per_station: dict[str, list] = {}
             for arrival in arrivals[:-1]:
                 name = arrival['name']
@@ -1153,7 +1153,7 @@ def find_shortest_route(G: nx.MultiDiGraph, start: str, end: str, data: list,
                         data, MTR_VER, route_type)
 
 
-def remove_duplicate(data, ert):
+def remove_duplicate(data, ert, shortest_distance):
     all_routes = data[0]['routes']
     new_ert = []
     removed_legs = []
@@ -1205,6 +1205,7 @@ def remove_duplicate(data, ert):
                     dwell = sum(dwells[i1 + 1:i2])
                     old_leg[k][4] = old_leg[k][4][:3]
                     old_leg[k][5] += dwell
+                    shortest_distance += dwell
                     break
 
         new_ert.append(old_leg)
@@ -1213,7 +1214,7 @@ def remove_duplicate(data, ert):
         new_ert.append(ert[-1])
 
     every_route_time = list(chain(*new_ert))
-    return every_route_time
+    return every_route_time, shortest_distance
 
 
 def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
@@ -1402,7 +1403,8 @@ def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
         station_names += end_
 
     if route_type == RouteType.IN_THEORY and MTR_VER == 4:
-        every_route_time = remove_duplicate(data, every_route_time)
+        every_route_time, shortest_distance = remove_duplicate(
+            data, every_route_time, shortest_distance)
     else:
         every_route_time = list(chain(*every_route_time))
 
@@ -1671,12 +1673,15 @@ def generate_image(pattern, shortest_distance, riding_time, waiting_time,
 def main(station1: str, station2: str, LINK: str,
          LOCAL_FILE_PATH, INTERVAL_PATH, BASE_PATH, PNG_PATH,
          MAX_WILD_BLOCKS: int = 1500,
-         TRANSFER_ADDITION: dict[str, list[str]] = {},
-         WILD_ADDITION: dict[str, list[str]] = {},
-         STATION_TABLE: dict[str, str] = {},
-         ORIGINAL_IGNORED_LINES: list = [], UPDATE_DATA: bool = False,
-         GEN_ROUTE_INTERVAL: bool = False, IGNORED_LINES: list = [],
-         ONLY_LINES: list = [], AVOID_STATIONS: list = [],
+         TRANSFER_ADDITION: Optional[dict[str, list[str]]] = None,
+         WILD_ADDITION: Optional[dict[str, list[str]]] = None,
+         STATION_TABLE: Optional[dict[str, str]] = None,
+         ORIGINAL_IGNORED_LINES: Optional[list] = None,
+         UPDATE_DATA: bool = False,
+         GEN_ROUTE_INTERVAL: bool = False,
+         IGNORED_LINES: Optional[list] = None,
+         ONLY_LINES: Optional[list] = None,
+         AVOID_STATIONS: Optional[list] = None,
          CALCULATE_HIGH_SPEED: bool = True, CALCULATE_BOAT: bool = True,
          CALCULATE_WALKING_WILD: bool = False, ONLY_LRT: bool = False,
          IN_THEORY: bool = False, DETAIL: bool = False,
@@ -1727,6 +1732,21 @@ def main(station1: str, station2: str, LINK: str,
     '''
     if MTR_VER not in [3, 4]:
         raise NotImplementedError('MTR_VER should be 3 or 4')
+
+    if TRANSFER_ADDITION is None:
+        TRANSFER_ADDITION = {}
+    if WILD_ADDITION is None:
+        WILD_ADDITION = {}
+    if STATION_TABLE is None:
+        STATION_TABLE = {}
+    if ORIGINAL_IGNORED_LINES is None:
+        ORIGINAL_IGNORED_LINES = []
+    if IGNORED_LINES is None:
+        IGNORED_LINES = []
+    if ONLY_LINES is None:
+        ONLY_LINES = []
+    if AVOID_STATIONS is None:
+        AVOID_STATIONS = []
 
     IGNORED_LINES += ORIGINAL_IGNORED_LINES
     STATION_TABLE = {x.lower(): y.lower() for x, y in STATION_TABLE.items()}

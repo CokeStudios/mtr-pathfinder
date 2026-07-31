@@ -631,17 +631,16 @@ def gen_timetable(data: dict, IGNORED_LINES: list[str], ONLY_LINES: list[str],
                 connections = list(data['stations'].keys())
                 if _station2 in WILD_ADDITION:
                     connections += data['stations'][WILD_ADDITION[_station2]]
+                
+                transfer = data['transfer_time'].get(_station2, {})
                 for con in connections:
                     if con in avoid_ids:
                         continue
 
-                    if _station2 not in data['transfer_time']:
+                    if con not in transfer:
                         continue
 
-                    if con not in data['transfer_time'][_station2]:
-                        continue
-
-                    t2 = round(data['transfer_time'][_station2][con])
+                    t2 = round(transfer[con])
                     dist = data['transfer_dist'][_station2][con]
                     con = data['stations'][con]['station']
                     tt.append((sta_id(station2), sta_id(con),
@@ -727,14 +726,13 @@ def load_tt(tt_dict: dict[tuple], data, start, end, departure_time: int,
         connections = list(data['stations'].keys())
         if start in WILD_ADDITION:
             connections += data['stations'][WILD_ADDITION[start]]
+
+        transfer = data['transfer_time'].get(start_station, {})
         for con in connections:
-            if start_station not in data['transfer_time']:
+            if con not in transfer:
                 continue
 
-            if con not in data['transfer_time'][start_station]:
-                continue
-
-            t2 = round(data['transfer_time'][start_station][con])
+            t2 = round(transfer[con])
             dist = data['transfer_dist'][start_station][con]
             con = data['stations'][con]['station']
             timetable.append(
@@ -1122,12 +1120,15 @@ def generate_image(pattern, route_type, BASE_PATH, version1, version2,
 def main(station1: str, station2: str, LINK: str,
          LOCAL_FILE_PATH, DEP_PATH, BASE_PATH, PNG_PATH,
          MAX_WILD_BLOCKS: int = 1500,
-         TRANSFER_ADDITION: dict[str, list[str]] = {},
-         WILD_ADDITION: dict[str, list[str]] = {},
-         STATION_TABLE: dict[str, str] = {},
-         ORIGINAL_IGNORED_LINES: list = [], UPDATE_DATA: bool = False,
-         GEN_DEPARTURE: bool = False, IGNORED_LINES: list = [],
-         ONLY_LINES: list = [], AVOID_STATIONS: list = [],
+         TRANSFER_ADDITION: Optional[dict[str, list[str]]] = None,
+         WILD_ADDITION: Optional[dict[str, list[str]]] = None,
+         STATION_TABLE: Optional[dict[str, str]] = None,
+         ORIGINAL_IGNORED_LINES: Optional[list] = None,
+         UPDATE_DATA: bool = False,
+         GEN_DEPARTURE: bool = False,
+         IGNORED_LINES: Optional[list] = None,
+         ONLY_LINES: Optional[list] = None,
+         AVOID_STATIONS: Optional[list] = None,
          CALCULATE_HIGH_SPEED: bool = True, CALCULATE_BOAT: bool = True,
          CALCULATE_WALKING_WILD: bool = False, ONLY_LRT: bool = False,
          DETAIL: bool = False, MAX_HOUR=3, timetable=None, gen_image=True,
@@ -1186,6 +1187,21 @@ def main(station1: str, station2: str, LINK: str,
         departure_time += 10  # 寻路时间
 
     departure_time %= 86400
+
+    if TRANSFER_ADDITION is None:
+        TRANSFER_ADDITION = {}
+    if WILD_ADDITION is None:
+        WILD_ADDITION = {}
+    if STATION_TABLE is None:
+        STATION_TABLE = {}
+    if ORIGINAL_IGNORED_LINES is None:
+        ORIGINAL_IGNORED_LINES = []
+    if IGNORED_LINES is None:
+        IGNORED_LINES = []
+    if ONLY_LINES is None:
+        ONLY_LINES = []
+    if AVOID_STATIONS is None:
+        AVOID_STATIONS = []
 
     IGNORED_LINES += ORIGINAL_IGNORED_LINES
     STATION_TABLE = {x.lower(): y.lower() for x, y in STATION_TABLE.items()}
