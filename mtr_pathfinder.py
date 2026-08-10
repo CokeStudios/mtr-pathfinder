@@ -26,7 +26,7 @@ from PIL import Image, ImageDraw, ImageFont
 import networkx as nx
 import requests
 
-__version__ = '130'
+CACHE_VERSION = '130'
 SERVER_TICK: int = 20
 
 DEFAULT_AVERAGE_SPEED: dict = {
@@ -39,9 +39,9 @@ DEFAULT_AVERAGE_SPEED: dict = {
     'cable_car_normal': 8,
     'airplane_normal': 70
 }                                   # 列车平均速度，单位 block/s
-RUNNING_SPEED: int = 5.612          # 站内换乘速度，单位 block/s
-TRANSFER_SPEED: int = 4.317         # 出站换乘速度，单位 block/s
-WILD_WALKING_SPEED: int = 2.25      # 非出站换乘（越野）速度，单位 block/s
+RUNNING_SPEED: float = 5.612          # 站内换乘速度，单位 block/s
+TRANSFER_SPEED: float = 4.317         # 出站换乘速度，单位 block/s
+WILD_WALKING_SPEED: float = 2.25      # 非出站换乘（越野）速度，单位 block/s
 
 ROUTE_INTERVAL_DATA = Queue()
 semaphore = BoundedSemaphore(25)
@@ -308,7 +308,7 @@ def gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER) -> None:
             if x not in dep_dict_per_route:
                 dep_dict_per_route[x] = dep_dict_per_route_[x]
 
-        freq_dict: dict[str, list] = {}
+        freq_dict: dict[str, int] = {}
         for route, arrivals in dep_dict_per_route.items():
             if len(arrivals) == 1:
                 freq_dict[route] = round_ten(arrivals[0])
@@ -332,7 +332,7 @@ def gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER) -> None:
             dep_list = list(sorted(dep_list))
             dep_dict[x['id']] = dep_list
 
-        freq_dict: dict[str, list] = {}
+        freq_dict: dict[str, int] = {}
         for route_id, stats in dep_dict.items():
             if len(stats) == 0:
                 continue
@@ -370,7 +370,7 @@ def gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER) -> None:
             json.dump(freq_dict, f)
 
 
-def fetch_data(link: str, LOCAL_FILE_PATH, MTR_VER) -> str:
+def fetch_data(link: str, LOCAL_FILE_PATH, MTR_VER) -> list:
     '''
     Fetch all the route data and station data.
     '''
@@ -445,7 +445,7 @@ def get_distance(a_dict: dict, b_dict: dict, square: bool = False) -> float:
 
 
 def station_name_to_id(data: list, sta: str, STATION_TABLE,
-                       fuzzy_compare=True) -> str:
+                       fuzzy_compare=True) -> Optional[str]:
     '''
     Convert a station's name to its ID.
     '''
@@ -512,12 +512,14 @@ def get_route_station_index(route: dict, station_1_id: str, station_2_id: str,
 
 
 def get_approximated_time(route: dict, station_1_id: str, station_2_id: str,
-                          data: list, tick: bool = False, MTR_VER=3) -> float:
+                          data: list, tick: bool = False,
+                          MTR_VER: int = 3) -> Optional[float]:
     '''
     Get the approximated time of the two stations in one route.
     '''
     if MTR_VER == 4:
-        return get_app_time_v4(route, station_1_id, station_2_id)
+        return get_app_time_v4(
+            route, station_1_id=station_1_id, station_2_id=station_2_id)
 
     index1, index2 = get_route_station_index(route,
                                              station_1_id, station_2_id)
@@ -556,15 +558,19 @@ def get_approximated_time(route: dict, station_1_id: str, station_2_id: str,
     return t
 
 
-def get_app_time_v4(route: dict,
-                    station_1_id: str, station_2_id: str) -> float:
+def get_app_time_v4(route: dict, *,
+                    station_1_id: Optional[str] = None,
+                    station_2_id: Optional[str] = None,
+                    index1: Optional[int] = None,
+                    index2: Optional[int] = None) -> Optional[float]:
     '''
     Get the approximated time of the two stations in one route.
     '''
-    index1, index2 = get_route_station_index(route,
-                                             station_1_id, station_2_id, 4)
-    if index2 is None:
-        return None
+    if index1 is None or index2 is None:
+        index1, index2 = get_route_station_index(
+            route, station_1_id, station_2_id, MTR_VER=4)
+        if index2 is None:
+            return None
 
     t = 0
     stations = route['stations'][index1:index2 + 1]
@@ -581,7 +587,7 @@ def get_app_time_v4(route: dict,
 
 
 def check_route_name(route_data, IGNORED_LINES: list[str],
-                     ONLY_LINES: list[str] = None):
+                     ONLY_LINES: Optional[list[str]] = None):
     if ONLY_LINES is None:
         ONLY_LINES = []
 
@@ -661,7 +667,7 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
 
         filename = f'mtr_pathfinder_temp{os.sep}' + \
             f'3{int(CALCULATE_HIGH_SPEED)}{int(CALCULATE_WALKING_WILD)}' + \
-            f'-{version1}-{version2}-{m.hexdigest()}-{__version__}.dat'
+            f'-{version1}-{version2}-{m.hexdigest()}-{CACHE_VERSION}.dat'
         if os.path.exists(filename):
             with open(filename, 'rb') as f:
                 tup = pickle.load(f)
@@ -863,7 +869,7 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
 
                     if 0 in dur_list:
                         t = get_approximated_time(route, station_1, station_2,
-                                                  data, MTR_VER)
+                                                  data, MTR_VER=MTR_VER)
                         if t is None:
                             continue
                         dur = t
@@ -888,8 +894,7 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
                         continue
 
                     if 0 in dur_list:
-                        t = get_app_time_v4(route, station_1, station_2,
-                                            data, MTR_VER)
+                        t = get_app_time_v4(route, index1=i, index2=i2)
                         if t is None:
                             continue
                         dur = round(t + dwell)
@@ -1120,8 +1125,9 @@ def gen_all_caches(original_ignored_lines: list[str], LOCAL_FILE_PATH,
 
 
 def find_shortest_route(G: nx.MultiDiGraph, start: str, end: str, data: list,
-                        STATION_TABLE, MTR_VER, route_type: RouteType,
-                        fuzzy_compare=True) -> list[str, int, int, int, list]:
+                        STATION_TABLE, MTR_VER,
+                        route_type: RouteType, fuzzy_compare=True
+                        ) -> tuple[str, int, int, int, list]:
     '''
     Find the shortest route between two stations.
     '''
@@ -1144,9 +1150,9 @@ def find_shortest_route(G: nx.MultiDiGraph, start: str, end: str, data: list,
         shortest_distance = nx.shortest_path_length(G, start_station,
                                                     end_station,
                                                     weight='weight')
-    except nx.exception.NetworkXNoPath:
+    except nx.NetworkXNoPath:
         return False, False, False, False, False
-    except nx.exception.NodeNotFound:
+    except nx.NodeNotFound:
         return False, False, False, False, False
 
     return process_path(G, shortest_path, shortest_distance,
@@ -1219,7 +1225,7 @@ def remove_duplicate(data, ert, shortest_distance):
 
 def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
                  data: list, MTR_VER,
-                 route_type: RouteType) -> list[str, int, int, int, list]:
+                 route_type: RouteType) -> tuple[str, int, int, int, list]:
     '''
     Process the path, change it into human readable form.
     '''
@@ -1498,9 +1504,9 @@ def save_image(route_type: RouteType, every_route_time: list,
                           version1, version2, show)
 
 
-def calculate_height_width(pattern: list[list[ImagePattern]],
+def calculate_height_width(pattern: list[tuple[ImagePattern, str, str]],
                            route_type, final_str: str,
-                           final_str_size: int, BASE_PATH) -> tuple[int]:
+                           final_str_size: int, BASE_PATH) -> tuple[int, int]:
     '''
     Calculate the width and the height of the image.
     '''
