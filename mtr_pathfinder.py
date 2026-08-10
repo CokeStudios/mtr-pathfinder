@@ -26,7 +26,7 @@ from PIL import Image, ImageDraw, ImageFont
 import networkx as nx
 import requests
 
-__version__ = '130'
+CACHE_VERSION = '130'
 SERVER_TICK: int = 20
 
 DEFAULT_AVERAGE_SPEED: dict = {
@@ -667,7 +667,7 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
 
         filename = f'mtr_pathfinder_temp{os.sep}' + \
             f'3{int(CALCULATE_HIGH_SPEED)}{int(CALCULATE_WALKING_WILD)}' + \
-            f'-{version1}-{version2}-{m.hexdigest()}-{__version__}.dat'
+            f'-{version1}-{version2}-{m.hexdigest()}-{CACHE_VERSION}.dat'
         if os.path.exists(filename):
             with open(filename, 'rb') as f:
                 tup = pickle.load(f)
