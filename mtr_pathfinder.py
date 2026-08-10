@@ -1504,7 +1504,7 @@ def save_image(route_type: RouteType, every_route_time: list,
                           version1, version2, show)
 
 
-def calculate_height_width(pattern: list[list[ImagePattern]],
+def calculate_height_width(pattern: list[tuple[ImagePattern, str, str]],
                            route_type, final_str: str,
                            final_str_size: int, BASE_PATH) -> tuple[int, int]:
     '''
