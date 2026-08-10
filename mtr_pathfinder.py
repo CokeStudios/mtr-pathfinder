@@ -11,7 +11,7 @@ from operator import itemgetter
 from statistics import median_low
 from threading import Thread, BoundedSemaphore
 from time import gmtime, strftime, time
-from typing import Any, Optional, Dict, Literal, Tuple, List, Union
+from typing import Optional, Dict, Literal, Tuple, List, Union
 from queue import Queue
 import base64
 import hashlib
@@ -54,7 +54,7 @@ opencc4 = OpenCC('jp2t')
 
 
 def get_close_matches(words, possibilities, cutoff=0.2):
-    result: list[tuple[float, Optional[str]]] = [(-1.0, None)]
+    result = [(-1, None)]
     s = SequenceMatcher()
     for word in words:
         s.set_seq2(word)
@@ -160,7 +160,7 @@ def draw_text(
     draw: ImageDraw.ImageDraw,
     xy: Tuple[int, int],
     text: str,
-    color: Any,
+    color: Tuple[int, int, int],
     fonts: Dict[str, TTFont],
     size: int,
     anchor: Optional[str] = None,
@@ -512,12 +512,14 @@ def get_route_station_index(route: dict, station_1_id: str, station_2_id: str,
 
 
 def get_approximated_time(route: dict, station_1_id: str, station_2_id: str,
-                          data: list, tick: bool = False, MTR_VER=3) -> Optional[float]:
+                          data: list, tick: bool = False,
+                          MTR_VER: int = 3) -> Optional[float]:
     '''
     Get the approximated time of the two stations in one route.
     '''
     if MTR_VER == 4:
-        return get_app_time_v4(route, station_1_id, station_2_id)
+        return get_app_time_v4(
+            route, station_1_id=station_1_id, station_2_id=station_2_id)
 
     index1, index2 = get_route_station_index(route,
                                              station_1_id, station_2_id)
@@ -556,15 +558,19 @@ def get_approximated_time(route: dict, station_1_id: str, station_2_id: str,
     return t
 
 
-def get_app_time_v4(route: dict,
-                    station_1_id: str, station_2_id: str) -> Optional[float]:
+def get_app_time_v4(route: dict, *,
+                    station_1_id: Optional[str] = None,
+                    station_2_id: Optional[str] = None,
+                    index1: Optional[int] = None,
+                    index2: Optional[int] = None) -> Optional[float]:
     '''
     Get the approximated time of the two stations in one route.
     '''
-    index1, index2 = get_route_station_index(route,
-                                             station_1_id, station_2_id, 4)
-    if index2 is None:
-        return None
+    if index1 is None or index2 is None:
+        index1, index2 = get_route_station_index(
+            route, station_1_id, station_2_id, MTR_VER=4)
+        if index2 is None:
+            return None
 
     t = 0
     stations = route['stations'][index1:index2 + 1]
@@ -863,7 +869,7 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
 
                     if 0 in dur_list:
                         t = get_approximated_time(route, station_1, station_2,
-                                                  data, False, MTR_VER)
+                                                  data, MTR_VER=MTR_VER)
                         if t is None:
                             continue
                         dur = t
@@ -888,8 +894,7 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
                         continue
 
                     if 0 in dur_list:
-                        t = get_app_time_v4(route, station_1['id'],
-                                            station_2['id'])
+                        t = get_app_time_v4(route, index1=i, index2=i2)
                         if t is None:
                             continue
                         dur = round(t + dwell)
@@ -1048,16 +1053,14 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
                     dist = sqrt(dist)
                     duration = dist / WILD_WALKING_SPEED
                     if G.has_edge(station, station2) and \
-                            duration - G.get_edge_data(
-                                station, station2, 0)['weight'] > 60:
+                            duration - G[station][station2][0]['weight'] > 60:
                         continue
 
                     edges_attr_dict[(station, station2)] = [
                         (f'步行 Walk {round(dist, 2)}m', duration, 0)]
                     if G.has_edge(station, station2) and \
                             duration + 120 < \
-                            G.get_edge_data(
-                                station, station2, 0)['weight']:
+                            G[station][station2][0]['weight']:
                         G.remove_edge(station, station2)
 
         for edge in edges_attr_dict.items():
@@ -1122,8 +1125,9 @@ def gen_all_caches(original_ignored_lines: list[str], LOCAL_FILE_PATH,
 
 
 def find_shortest_route(G: nx.MultiDiGraph, start: str, end: str, data: list,
-                        STATION_TABLE, MTR_VER, route_type: RouteType,
-                        fuzzy_compare=True) -> tuple:
+                        STATION_TABLE, MTR_VER,
+                        route_type: RouteType, fuzzy_compare=True
+                        ) -> tuple[str, int, int, int, list]:
     '''
     Find the shortest route between two stations.
     '''
@@ -1219,9 +1223,9 @@ def remove_duplicate(data, ert, shortest_distance):
     return every_route_time, shortest_distance
 
 
-def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: float,
+def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
                  data: list, MTR_VER,
-                 route_type: RouteType) -> tuple:
+                 route_type: RouteType) -> tuple[str, int, int, int, list]:
     '''
     Process the path, change it into human readable form.
     '''
@@ -1500,7 +1504,7 @@ def save_image(route_type: RouteType, every_route_time: list,
                           version1, version2, show)
 
 
-def calculate_height_width(pattern: list[tuple[Any, ...]],
+def calculate_height_width(pattern: list[list[ImagePattern]],
                            route_type, final_str: str,
                            final_str_size: int, BASE_PATH) -> tuple[int, int]:
     '''
