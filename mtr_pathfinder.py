@@ -11,7 +11,7 @@ from operator import itemgetter
 from statistics import median_low
 from threading import Thread, BoundedSemaphore
 from time import gmtime, strftime, time
-from typing import Optional, Dict, Literal, Tuple, List, Union
+from typing import Any, Optional, Dict, Literal, Tuple, List, Union
 from queue import Queue
 import base64
 import hashlib
@@ -39,9 +39,9 @@ DEFAULT_AVERAGE_SPEED: dict = {
     'cable_car_normal': 8,
     'airplane_normal': 70
 }                                   # 列车平均速度，单位 block/s
-RUNNING_SPEED: int = 5.612          # 站内换乘速度，单位 block/s
-TRANSFER_SPEED: int = 4.317         # 出站换乘速度，单位 block/s
-WILD_WALKING_SPEED: int = 2.25      # 非出站换乘（越野）速度，单位 block/s
+RUNNING_SPEED: float = 5.612          # 站内换乘速度，单位 block/s
+TRANSFER_SPEED: float = 4.317         # 出站换乘速度，单位 block/s
+WILD_WALKING_SPEED: float = 2.25      # 非出站换乘（越野）速度，单位 block/s
 
 ROUTE_INTERVAL_DATA = Queue()
 semaphore = BoundedSemaphore(25)
@@ -54,7 +54,7 @@ opencc4 = OpenCC('jp2t')
 
 
 def get_close_matches(words, possibilities, cutoff=0.2):
-    result = [(-1, None)]
+    result: list[tuple[float, Optional[str]]] = [(-1.0, None)]
     s = SequenceMatcher()
     for word in words:
         s.set_seq2(word)
@@ -160,7 +160,7 @@ def draw_text(
     draw: ImageDraw.ImageDraw,
     xy: Tuple[int, int],
     text: str,
-    color: Tuple[int, int, int],
+    color: Any,
     fonts: Dict[str, TTFont],
     size: int,
     anchor: Optional[str] = None,
@@ -308,7 +308,7 @@ def gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER) -> None:
             if x not in dep_dict_per_route:
                 dep_dict_per_route[x] = dep_dict_per_route_[x]
 
-        freq_dict: dict[str, list] = {}
+        freq_dict: dict[str, int] = {}
         for route, arrivals in dep_dict_per_route.items():
             if len(arrivals) == 1:
                 freq_dict[route] = round_ten(arrivals[0])
@@ -332,7 +332,7 @@ def gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER) -> None:
             dep_list = list(sorted(dep_list))
             dep_dict[x['id']] = dep_list
 
-        freq_dict: dict[str, list] = {}
+        freq_dict: dict[str, int] = {}
         for route_id, stats in dep_dict.items():
             if len(stats) == 0:
                 continue
@@ -370,7 +370,7 @@ def gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER) -> None:
             json.dump(freq_dict, f)
 
 
-def fetch_data(link: str, LOCAL_FILE_PATH, MTR_VER) -> str:
+def fetch_data(link: str, LOCAL_FILE_PATH, MTR_VER) -> list:
     '''
     Fetch all the route data and station data.
     '''
@@ -445,7 +445,7 @@ def get_distance(a_dict: dict, b_dict: dict, square: bool = False) -> float:
 
 
 def station_name_to_id(data: list, sta: str, STATION_TABLE,
-                       fuzzy_compare=True) -> str:
+                       fuzzy_compare=True) -> Optional[str]:
     '''
     Convert a station's name to its ID.
     '''
@@ -512,7 +512,7 @@ def get_route_station_index(route: dict, station_1_id: str, station_2_id: str,
 
 
 def get_approximated_time(route: dict, station_1_id: str, station_2_id: str,
-                          data: list, tick: bool = False, MTR_VER=3) -> float:
+                          data: list, tick: bool = False, MTR_VER=3) -> Optional[float]:
     '''
     Get the approximated time of the two stations in one route.
     '''
@@ -557,7 +557,7 @@ def get_approximated_time(route: dict, station_1_id: str, station_2_id: str,
 
 
 def get_app_time_v4(route: dict,
-                    station_1_id: str, station_2_id: str) -> float:
+                    station_1_id: str, station_2_id: str) -> Optional[float]:
     '''
     Get the approximated time of the two stations in one route.
     '''
@@ -581,7 +581,7 @@ def get_app_time_v4(route: dict,
 
 
 def check_route_name(route_data, IGNORED_LINES: list[str],
-                     ONLY_LINES: list[str] = None):
+                     ONLY_LINES: Optional[list[str]] = None):
     if ONLY_LINES is None:
         ONLY_LINES = []
 
@@ -863,7 +863,7 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
 
                     if 0 in dur_list:
                         t = get_approximated_time(route, station_1, station_2,
-                                                  data, MTR_VER)
+                                                  data, False, MTR_VER)
                         if t is None:
                             continue
                         dur = t
@@ -888,8 +888,8 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
                         continue
 
                     if 0 in dur_list:
-                        t = get_app_time_v4(route, station_1, station_2,
-                                            data, MTR_VER)
+                        t = get_app_time_v4(route, station_1['id'],
+                                            station_2['id'])
                         if t is None:
                             continue
                         dur = round(t + dwell)
@@ -1048,14 +1048,16 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
                     dist = sqrt(dist)
                     duration = dist / WILD_WALKING_SPEED
                     if G.has_edge(station, station2) and \
-                            duration - G[station][station2][0]['weight'] > 60:
+                            duration - G.get_edge_data(
+                                station, station2, 0)['weight'] > 60:
                         continue
 
                     edges_attr_dict[(station, station2)] = [
                         (f'步行 Walk {round(dist, 2)}m', duration, 0)]
                     if G.has_edge(station, station2) and \
                             duration + 120 < \
-                            G[station][station2][0]['weight']:
+                            G.get_edge_data(
+                                station, station2, 0)['weight']:
                         G.remove_edge(station, station2)
 
         for edge in edges_attr_dict.items():
@@ -1121,7 +1123,7 @@ def gen_all_caches(original_ignored_lines: list[str], LOCAL_FILE_PATH,
 
 def find_shortest_route(G: nx.MultiDiGraph, start: str, end: str, data: list,
                         STATION_TABLE, MTR_VER, route_type: RouteType,
-                        fuzzy_compare=True) -> list[str, int, int, int, list]:
+                        fuzzy_compare=True) -> tuple:
     '''
     Find the shortest route between two stations.
     '''
@@ -1144,9 +1146,9 @@ def find_shortest_route(G: nx.MultiDiGraph, start: str, end: str, data: list,
         shortest_distance = nx.shortest_path_length(G, start_station,
                                                     end_station,
                                                     weight='weight')
-    except nx.exception.NetworkXNoPath:
+    except nx.NetworkXNoPath:
         return False, False, False, False, False
-    except nx.exception.NodeNotFound:
+    except nx.NodeNotFound:
         return False, False, False, False, False
 
     return process_path(G, shortest_path, shortest_distance,
@@ -1217,9 +1219,9 @@ def remove_duplicate(data, ert, shortest_distance):
     return every_route_time, shortest_distance
 
 
-def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
+def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: float,
                  data: list, MTR_VER,
-                 route_type: RouteType) -> list[str, int, int, int, list]:
+                 route_type: RouteType) -> tuple:
     '''
     Process the path, change it into human readable form.
     '''
@@ -1498,9 +1500,9 @@ def save_image(route_type: RouteType, every_route_time: list,
                           version1, version2, show)
 
 
-def calculate_height_width(pattern: list[list[ImagePattern]],
+def calculate_height_width(pattern: list[tuple[Any, ...]],
                            route_type, final_str: str,
-                           final_str_size: int, BASE_PATH) -> tuple[int]:
+                           final_str_size: int, BASE_PATH) -> tuple[int, int]:
     '''
     Calculate the width and the height of the image.
     '''
