@@ -24,7 +24,7 @@ from opencc import OpenCC
 from PIL import Image, ImageDraw, ImageFont
 import requests
 
-__version__ = '130'
+CACHE_VERSION = '130'
 MAX_INT = 2 ** 64 - 1
 
 RUNNING_SPEED: float = 5.612          # 站内换乘速度，单位 block/s
@@ -37,10 +37,8 @@ opencc3 = OpenCC('t2s')
 opencc4 = OpenCC('jp2t')
 
 
-def get_close_matches(words: list[str],
-                      possibilities: list[tuple[str, str]],
-                      cutoff: float = 0.2) -> Optional[str]:
-    result: list[tuple[float, Optional[str]]] = [(-1.0, None)]
+def get_close_matches(words, possibilities, cutoff=0.2):
+    result = [(-1, None)]
     s = SequenceMatcher()
     for word in words:
         s.set_seq2(word)
@@ -444,7 +442,7 @@ def station_name_to_id(data: dict, sta: str, STATION_TABLE,
     return output
 
 
-def station_num_to_name(data: dict, sta: str) -> str | None:
+def station_num_to_name(data: dict, sta: str) -> str:
     '''
     Convert one station's code (str of base-10 int) to its name.
     '''
@@ -452,7 +450,6 @@ def station_num_to_name(data: dict, sta: str) -> str | None:
     for station in data['stations'].values():
         if station['station'] == sta:
             return station['name']
-    return None
 
 
 def sta_id(station: str) -> int:
@@ -460,7 +457,7 @@ def sta_id(station: str) -> int:
 
 
 def check_route_name(route_data, IGNORED_LINES: list[str],
-                     ONLY_LINES: list[str] | None = None):
+                     ONLY_LINES: Optional[list[str]] = None):
     if ONLY_LINES is None:
         ONLY_LINES = []
 
@@ -515,7 +512,7 @@ def gen_timetable(data: dict, IGNORED_LINES: list[str], ONLY_LINES: list[str],
                   original_ignored_lines: list[str], DEP_PATH: str,
                   version1: str, version2: str,
                   STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION
-                  ) -> dict:
+                  ) -> dict[str, list[tuple]]:
     '''
     Generate the timetable of all routes.
     '''
@@ -533,7 +530,7 @@ def gen_timetable(data: dict, IGNORED_LINES: list[str], ONLY_LINES: list[str],
 
         filename = f'mtr_pathfinder_temp{os.sep}' + \
             f'4{int(CALCULATE_HIGH_SPEED)}{int(CALCULATE_WALKING_WILD)}' + \
-            f'-{version1}-{version2}-{m.hexdigest()}-{__version__}.dat'
+            f'-{version1}-{version2}-{m.hexdigest()}-{CACHE_VERSION}.dat'
         if os.path.exists(filename):
             with open(filename, 'r+b') as f:
                 mmapped_file = mmap.mmap(f.fileno(), 0)
@@ -634,7 +631,7 @@ def gen_timetable(data: dict, IGNORED_LINES: list[str], ONLY_LINES: list[str],
                 connections = list(data['stations'].keys())
                 if _station2 in WILD_ADDITION:
                     connections += data['stations'][WILD_ADDITION[_station2]]
-                
+
                 transfer = data['transfer_time'].get(_station2, {})
                 for con in connections:
                     if con in avoid_ids:
@@ -695,13 +692,13 @@ def gen_all_caches(original_ignored_lines: list[str], LOCAL_FILE_PATH,
                   STATION_TABLE, WILD_ADDITION, TRANSFER_ADDITION)
 
 
-def load_tt(tt_dict: dict[tuple, list], data, start, end, departure_time: int,
-            DEP_PATH, STATION_TABLE, TRANSFER_ADDITION,
+def load_tt(tt_dict: dict[str, list[tuple]], data, start, end,
+            departure_time: int, DEP_PATH, STATION_TABLE, TRANSFER_ADDITION,
             CALCULATE_WALKING_WILD, WILD_ADDITION, MAX_HOUR):
     with open(DEP_PATH, 'r', encoding='utf-8') as f:
         dep_data: dict[str, list[int]] = json.load(f)
 
-    timetable: list = []
+    timetable: list[tuple | list] = []
     start_station = station_name_to_id(data, start, STATION_TABLE)
     end_station = station_name_to_id(data, end, STATION_TABLE)
     if not (start_station and end_station):
@@ -794,8 +791,9 @@ def load_tt(tt_dict: dict[tuple, list], data, start, end, departure_time: int,
 
 
 def process_path(result: list[tuple], start: str, end: str,
-                 trips: dict[str, dict[str, int]], data: dict, detail: bool,
-                 STATION_TABLE) -> Union[list, tuple]:
+                 trips: dict[str, dict[str, int]], data: dict,
+                 detail: bool, STATION_TABLE
+                 ) -> Union[list[str, int, int, int, list], tuple]:
     '''
     Process the path, change it into human readable form.
     '''
@@ -807,8 +805,8 @@ def process_path(result: list[tuple], start: str, end: str,
     if start_station == end_station:
         return None, None, None, None, None
 
-    path: list = []
-    last_detail: Optional[tuple] = None
+    path = []
+    last_detail = None
     route_new = []
     low_i = MAX_INT
     for i in range(len(result) - 1, -1, -1):
@@ -851,11 +849,9 @@ def process_path(result: list[tuple], start: str, end: str,
         station_1 = x[0]
         station_2 = x[1]
         sta1_name = station_num_to_name(data, station_1)
-        assert sta1_name is not None
         sta1_id = station_name_to_id(data, sta1_name, {}, False)
         sta1_name = sta1_name.replace('|', ' ')
         sta2_name = station_num_to_name(data, station_2)
-        assert sta2_name is not None
         sta2_id = station_name_to_id(data, sta2_name, {}, False)
         sta2_name = sta2_name.replace('|', ' ')
         route_name = x[4][0]
@@ -885,8 +881,8 @@ def process_path(result: list[tuple], start: str, end: str,
                     sta2_index = sta_ids.index(sta2_id, i2)
                     i2 = sta2_index + 1
                     try:
-                        sta1_index = [i for (i, x) in enumerate(sta_ids[:i2])
-                                      if x == sta1_id][-1]
+                        sta1_index = [i for (i, v) in enumerate(sta_ids[:i2])
+                                      if v == sta1_id][-1]
                     except ValueError:
                         pass
                     else:
@@ -914,7 +910,7 @@ def process_path(result: list[tuple], start: str, end: str,
     return every_route_time
 
 
-def save_image(route_type: RouteType, every_route_time: Any,
+def save_image(route_type: RouteType, every_route_time: list,
                BASE_PATH, version1, version2,
                PNG_PATH, departure_time,
                show=False) -> tuple[Image.Image, str]:
@@ -959,7 +955,7 @@ def save_image(route_type: RouteType, every_route_time: Any,
                           version1, version2, full_time, show)
 
 
-def calculate_height_width(pattern: list[tuple[Any, ...]],
+def calculate_height_width(pattern: list[tuple[ImagePattern, str, str]],
                            route_type, final_str: str,
                            final_str_size: int, BASE_PATH) -> tuple[int, int]:
     '''
@@ -997,8 +993,8 @@ def calculate_height_width(pattern: list[tuple[Any, ...]],
 
 
 def draw_text(draw: ImageDraw.ImageDraw, xy: tuple[int, int], text: str,
-              color: Any,
-              fonts: tuple[ImageFont.FreeTypeFont, dict[str, TTFont]],
+              color: tuple[int, int, int],
+              fonts: list[ImageFont.FreeTypeFont, dict[str, TTFont]],
               size: int) -> None:
     for x in text:
         if ord(x) >= 128:
@@ -1138,7 +1134,7 @@ def main(station1: str, station2: str, LINK: str,
          CALCULATE_WALKING_WILD: bool = False, ONLY_LRT: bool = False,
          DETAIL: bool = False, MAX_HOUR=3, timetable=None, gen_image=True,
          show=False, departure_time=None, tz=0,
-         timeout_min=2) -> Union[tuple[Image.Image, str], list, bool, None]:
+         timeout_min=2) -> Union[tuple[Image.Image, str], bool, None]:
     '''
     Find the shortest path between two stations.
     Args:
