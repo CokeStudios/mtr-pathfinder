@@ -46,7 +46,7 @@ WILD_WALKING_SPEED: float = 2.25      # 非出站换乘（越野）速度，单�
 ROUTE_INTERVAL_DATA = Queue()
 semaphore = BoundedSemaphore(25)
 original = {}
-tmp_names = {}
+# _tmp_names = {}
 opencc1 = OpenCC('s2t')
 opencc2 = OpenCC('t2jp')
 opencc3 = OpenCC('t2s')
@@ -257,7 +257,8 @@ def fetch_interval_data(station_id: str, LINK) -> None:
             ROUTE_INTERVAL_DATA.put([station_id, [time(), data]])
 
 
-def gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER) -> None:
+def gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER,
+                       need_input=True) -> None:
     '''
     Generate all the interval data.
     '''
@@ -320,27 +321,20 @@ def gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER) -> None:
         departures = requests.get(link).json()['data']['departures']
         dep_dict: dict[str, list[int]] = {}
         for x in departures:
-            dep_list = set()
-            for y in x['departures']:
-                for z in y['departures']:
-                    dep = round(z / 1000)
-                    while dep < 0:
-                        dep += 86400
-
-                    dep_list.add(dep)
-
+            dep_list = set(round(z / 1000) % 86400
+                           for y in x['departures'] for z in y['departures'])
             dep_list = list(sorted(dep_list))
             dep_dict[x['id']] = dep_list
 
         freq_dict: dict[str, int] = {}
+        id_map = {route_stats['id']: route_stats
+                  for route_stats in data[0]['routes']}
         for route_id, stats in dep_dict.items():
             if len(stats) == 0:
                 continue
 
-            for route_stats in data[0]['routes']:
-                if route_stats['id'] == route_id:
-                    break
-            else:
+            route_stats = id_map.get(route_id)
+            if route_stats is None:
                 print(f'Route {route_id} not found')
                 continue
 
@@ -364,13 +358,17 @@ def gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER) -> None:
     else:
         return
 
-    y = input(f'是否替换{INTERVAL_PATH}文件? (Y/N) ').lower()
+    if need_input is True:
+        y = input(f'是否替换{INTERVAL_PATH}文件? (Y/N) ').lower()
+    else:
+        y = 'y'
+
     if y == 'y':
         with open(INTERVAL_PATH, 'w', encoding='utf-8') as f:
             json.dump(freq_dict, f)
 
 
-def fetch_data(link: str, LOCAL_FILE_PATH, MTR_VER) -> list:
+def fetch_data(link: str, LOCAL_FILE_PATH, MTR_VER, need_input=True) -> list:
     '''
     Fetch all the route data and station data.
     '''
@@ -383,8 +381,20 @@ def fetch_data(link: str, LOCAL_FILE_PATH, MTR_VER) -> list:
         data = requests.get(link).json()['data']
 
         data_new = {'routes': [], 'stations': {}}
+
+        station_routes = {}
+        for d in data['routes']:
+            for x in d['stations']:
+                if x['id'] in station_routes:
+                    station_routes[x['id']] += [d['id']]
+                else:
+                    station_routes[x['id']] = [d['id']]
+
         i = 0
         for d in data['stations']:
+            if d['id'] not in station_routes:
+                continue
+
             d['station'] = hex(i)[2:]
             data_new['stations'][d['id']] = d
             i += 1
@@ -425,7 +435,11 @@ def fetch_data(link: str, LOCAL_FILE_PATH, MTR_VER) -> list:
 
         data = [data_new]
 
-    y = input(f'是否替换{LOCAL_FILE_PATH}文件? (Y/N) ').lower()
+    if need_input is True:
+        y = input(f'是否替换{LOCAL_FILE_PATH}文件? (Y/N) ').lower()
+    else:
+        y = 'y'
+
     if y == 'y':
         with open(LOCAL_FILE_PATH, 'w', encoding='utf-8') as f:
             json.dump(data, f)
@@ -453,8 +467,8 @@ def station_name_to_id(data: list, sta: str, STATION_TABLE,
     if sta in STATION_TABLE:
         sta = STATION_TABLE[sta]
 
-    if sta in tmp_names:
-        return tmp_names[sta]
+    # if sta in _tmp_names:
+    #     return _tmp_names[sta]
 
     tra1 = opencc1.convert(sta)
     sta_try = [sta, tra1, opencc2.convert(tra1)]
@@ -481,8 +495,8 @@ def station_name_to_id(data: list, sta: str, STATION_TABLE,
     if has_station is False and fuzzy_compare is True:
         output = get_close_matches(sta_try, all_names)
 
-    if output is not None:
-        tmp_names[sta] = output
+    # if output is not None:
+    #     _tmp_names[sta] = output
 
     return output
 
@@ -1131,7 +1145,6 @@ def find_shortest_route(G: nx.MultiDiGraph, start: str, end: str, data: list,
     '''
     Find the shortest route between two stations.
     '''
-
     start_station = station_name_to_id(data, start,
                                        STATION_TABLE, fuzzy_compare)
     end_station = station_name_to_id(data, end, STATION_TABLE, fuzzy_compare)
@@ -1692,7 +1705,7 @@ def main(station1: str, station2: str, LINK: str,
          CALCULATE_WALKING_WILD: bool = False, ONLY_LRT: bool = False,
          IN_THEORY: bool = False, DETAIL: bool = False,
          MTR_VER: int = 3, G=None, gen_image=True, show=False,
-         cache=True, data_v3=None, fuzzy_compare=True
+         cache=True, data_v3=None, fuzzy_compare=True, need_input=True
          ) -> Union[tuple[Image.Image, str], bool, None]:
     '''
     Find the shortest path between two stations.
@@ -1727,6 +1740,7 @@ def main(station1: str, station2: str, LINK: str,
         cache (`bool`, optional): Enable cache.
         data_v3 (`list`, optional): The stations-and-routes data, preventing repeated json.load().
         fuzzy_compare (`bool`, optional): Enable fuzzy compare when processing station names.
+        need_input (`bool`, optional): Use input() function when downloading data, which will block the thread.
     Returns:
         A tuple including the generated image.
 
@@ -1764,7 +1778,7 @@ def main(station1: str, station2: str, LINK: str,
             if LINK == '':
                 raise ValueError('Railway System Map link is empty')
 
-            data = fetch_data(LINK, LOCAL_FILE_PATH, MTR_VER)
+            data = fetch_data(LINK, LOCAL_FILE_PATH, MTR_VER, need_input)
         else:
             with open(LOCAL_FILE_PATH, encoding='utf-8') as f:
                 data = json.load(f)
@@ -1780,7 +1794,8 @@ def main(station1: str, station2: str, LINK: str,
         if LINK == '':
             raise ValueError('Railway System Map link is empty')
 
-        gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK, MTR_VER)
+        gen_route_interval(LOCAL_FILE_PATH, INTERVAL_PATH, LINK,
+                           MTR_VER, need_input)
 
     version1 = strftime('%Y%m%d-%H%M',
                         gmtime(os.path.getmtime(LOCAL_FILE_PATH)))

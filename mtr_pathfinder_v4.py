@@ -277,7 +277,8 @@ def get_distance(a_dict: dict, b_dict: dict, square: bool = False) -> float:
     return sqrt(dist_square)
 
 
-def fetch_data(link: str, LOCAL_FILE_PATH, MAX_WILD_BLOCKS) -> dict:
+def fetch_data(link: str, LOCAL_FILE_PATH, MAX_WILD_BLOCKS,
+               need_input=True) -> dict:
     '''
     Fetch all the route data and station data.
     '''
@@ -372,7 +373,11 @@ def fetch_data(link: str, LOCAL_FILE_PATH, MAX_WILD_BLOCKS) -> dict:
 
             data_new['transfer_dist'][x][y] = distance
 
-    y = input(f'是否替换{LOCAL_FILE_PATH}文件? (Y/N) ').lower()
+    if need_input is True:
+        y = input(f'是否替换{LOCAL_FILE_PATH}文件? (Y/N) ').lower()
+    else:
+        y = 'y'
+
     if y == 'y':
         with open(LOCAL_FILE_PATH, 'w', encoding='utf-8') as f:
             json.dump(data_new, f)
@@ -380,7 +385,7 @@ def fetch_data(link: str, LOCAL_FILE_PATH, MAX_WILD_BLOCKS) -> dict:
     return data_new
 
 
-def gen_departure(link: str, DEP_PATH) -> None:
+def gen_departure(link: str, DEP_PATH, need_input=True) -> None:
     '''
     Download the departures.
     '''
@@ -401,7 +406,11 @@ def gen_departure(link: str, DEP_PATH) -> None:
         dep_list = list(sorted(dep_list))
         dep_dict[x['id']] = dep_list
 
-    y = input(f'是否替换{DEP_PATH}文件? (Y/N) ').lower()
+    if need_input is True:
+        y = input(f'是否替换{DEP_PATH}文件? (Y/N) ').lower()
+    else:
+        y = 'y'
+
     if y == 'y':
         with open(DEP_PATH, 'w', encoding='utf-8') as f:
             json.dump(dep_dict, f)
@@ -1133,8 +1142,8 @@ def main(station1: str, station2: str, LINK: str,
          CALCULATE_HIGH_SPEED: bool = True, CALCULATE_BOAT: bool = True,
          CALCULATE_WALKING_WILD: bool = False, ONLY_LRT: bool = False,
          DETAIL: bool = False, MAX_HOUR=3, timetable=None, gen_image=True,
-         show=False, departure_time=None, tz=0,
-         timeout_min=2) -> Union[tuple[Image.Image, str], bool, None]:
+         show=False, departure_time=None, tz=0, timeout_min=2,
+         need_input=True) -> Union[tuple[Image.Image, str], bool, None]:
     '''
     Find the shortest path between two stations.
     Args:
@@ -1167,6 +1176,7 @@ def main(station1: str, station2: str, LINK: str,
         show (`bool`, optional): Show the generated image.
         departure_time (`int`, optional): The departure time in seconds in a day.
         tz (`float`, optional): The timezone of the departure time in hours.
+        need_input (`bool`, optional): Use input() function when downloading data, which will block the thread.
     Returns:
         A tuple including the generated image.
 
@@ -1213,7 +1223,7 @@ def main(station1: str, station2: str, LINK: str,
         if LINK == '':
             raise ValueError('Railway System Map link is empty')
 
-        data = fetch_data(LINK, LOCAL_FILE_PATH, MAX_WILD_BLOCKS)
+        data = fetch_data(LINK, LOCAL_FILE_PATH, MAX_WILD_BLOCKS, need_input)
     else:
         with open(LOCAL_FILE_PATH, encoding='utf-8') as f:
             data = json.load(f)
@@ -1222,7 +1232,7 @@ def main(station1: str, station2: str, LINK: str,
         if LINK == '':
             raise ValueError('Railway System Map link is empty')
 
-        gen_departure(LINK, DEP_PATH)
+        gen_departure(LINK, DEP_PATH, need_input)
 
     version1 = strftime('%Y%m%d-%H%M',
                         gmtime(os.path.getmtime(LOCAL_FILE_PATH)))
