@@ -600,6 +600,57 @@ def get_app_time_v4(route: dict, *,
     return t
 
 
+def route_name_to_id(data: list, route_name: str, name=False) -> list[str]:
+    '''
+    Convert one route's name to the IDs/names of its possible matches.
+    '''
+    for route in data[0]['routes']:
+        if route_name == route['id']:
+            return [route_name]
+
+    route_name = route_name.lower()
+    result = []
+    for route in data[0]['routes']:
+        if name is True:
+            output: str = route['name']
+        else:
+            output: str = route['id']
+
+        n: str = route['name']
+        number: str = route['number']
+        route_names = [n, n.split('|')[0]]
+        if ('||' in n and n.count('|') > 2) or \
+                ('||' not in n and n.count('|') > 0):
+            eng_name = n.split('|')[1].split('|')[0]
+            if eng_name != '':
+                route_names.append(eng_name)
+
+        if number not in ['', ' ']:
+            for tmp_name in route_names[1:]:
+                route_names.append(tmp_name + ' ' + number)
+
+        for x in route_names:
+            x = x.lower().strip()
+            if x == route_name:
+                result.append(output)
+                continue
+
+            if x.isascii():
+                continue
+
+            simp1 = opencc3.convert(x)
+            if simp1 == route_name:
+                result.append(output)
+                continue
+
+            simp2 = opencc3.convert(opencc4.convert(x))
+            if simp2 == route_name:
+                result.append(output)
+                continue
+
+    return result
+
+
 def check_route_name(route_data, IGNORED_LINES: list[str],
                      ONLY_LINES: Optional[list[str]] = None):
     if ONLY_LINES is None:
@@ -611,6 +662,9 @@ def check_route_name(route_data, IGNORED_LINES: list[str],
     lines_to_check = [x.lower().strip()
                       for x in IGNORED_LINES + ONLY_LINES if x != '']
     n: str = route_data['name']
+    if n.lower().strip() in lines_to_check:
+        return bool(IGNORED_LINES)
+
     number: str = route_data['number']
     route_names = [n, n.split('|')[0], n.split('||')[0]]
     if ('||' in n and n.count('|') > 2) or \
@@ -773,6 +827,7 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
             else:
                 edges_attr_dict[(station, transfer)] = [
                     (f'出站换乘步行 Walk {round(dist, 2)}m', duration, 0)]
+
             waiting_walking_dict[(station, transfer)] = \
                 (duration, f'出站换乘步行 Walk {round(dist, 2)}m')
 
@@ -972,6 +1027,7 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
             #                 (route['name'], t, 0)]
 
     if route_type == RouteType.WAITING:
+        # 合并两站间的线路、等车时间
         for tup, dur_tup in edges_dict.items():
             dur = []
             wait = []
@@ -987,12 +1043,13 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
             final_routes = []
             min_dur = min(dur)
             for i, x in enumerate(dur):
+                # 两站间乘车路线中，用时（不考虑等车时间）比最快路线慢1分钟以上的不参与寻路
                 if abs(x - min_dur) <= 60:
                     final_wait.append(wait[i])
                     final_routes.append((routes[i], platforms[i]))
 
-            s1 = tup[0]
-            s2 = tup[1]
+            s1 = tup[0]  # Station 1 ID
+            s2 = tup[1]  # Station 2 ID
             lcm_sum = 1
             sum_interval = 0
             for x in final_wait:
@@ -1007,12 +1064,19 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
             else:
                 sum_int = lcm_sum / sum_interval / 2
 
+            # 与两站间步行时间对比，步行比乘车慢1min以上的，删除步行方案；步行比乘车快3min以上的，删除乘车方案
             if (s1, s2) in waiting_walking_dict:
                 t = waiting_walking_dict[(s1, s2)][0]
-                if abs(t - min_dur) <= 60:
+                if abs(t - min_dur) <= 60 or t < min_dur:
                     route_name = waiting_walking_dict[(s1, s2)][1]
-                    dur = waiting_walking_dict[(s1, s2)][0]
-                    final_routes.append((route_name, None))
+                    dur = t
+                    if min_dur - t > 180:
+                        final_routes = (route_name, None)
+                        min_dur = t
+                        sum_int = 0
+                    else:
+                        final_routes.append((route_name, None))
+
                     original[(route_name, s1, s2)] = dur
 
             edges_attr_dict[(s1, s2)] = [(final_routes, min_dur, sum_int)]
@@ -1091,8 +1155,11 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
 
     if filename != '':
         if not os.path.exists(filename):
-            with open(filename, 'wb') as f:
-                pickle.dump((G, original), f)
+            try:
+                with open(filename, 'wb') as f:
+                    pickle.dump((G, original), f)
+            except PermissionError:
+                pass
 
     return G
 
@@ -1706,7 +1773,7 @@ def main(station1: str, station2: str, LINK: str,
          IN_THEORY: bool = False, DETAIL: bool = False,
          MTR_VER: int = 3, G=None, gen_image=True, show=False,
          cache=True, data_v3=None, fuzzy_compare=True, need_input=True
-         ) -> Union[tuple[Image.Image, str], bool, None]:
+         ) -> Union[tuple[Image.Image, str], tuple[list, int], bool, None]:
     '''
     Find the shortest path between two stations.
     Args:

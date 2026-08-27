@@ -465,6 +465,57 @@ def sta_id(station: str) -> int:
     return int('0x' + station, 16)
 
 
+def route_name_to_id(data: list, route_name: str, name=False) -> list[str]:
+    '''
+    Convert one route's name to the IDs/names of its possible matches.
+    '''
+    for route in data[0]['routes']:
+        if route_name == route['id']:
+            return [route_name]
+
+    route_name = route_name.lower()
+    result = []
+    for route in data[0]['routes']:
+        if name is True:
+            output: str = route['name']
+        else:
+            output: str = route['id']
+
+        n: str = route['name']
+        number: str = route['number']
+        route_names = [n, n.split('|')[0]]
+        if ('||' in n and n.count('|') > 2) or \
+                ('||' not in n and n.count('|') > 0):
+            eng_name = n.split('|')[1].split('|')[0]
+            if eng_name != '':
+                route_names.append(eng_name)
+
+        if number not in ['', ' ']:
+            for tmp_name in route_names[1:]:
+                route_names.append(tmp_name + ' ' + number)
+
+        for x in route_names:
+            x = x.lower().strip()
+            if x == route_name:
+                result.append(output)
+                continue
+
+            if x.isascii():
+                continue
+
+            simp1 = opencc3.convert(x)
+            if simp1 == route_name:
+                result.append(output)
+                continue
+
+            simp2 = opencc3.convert(opencc4.convert(x))
+            if simp2 == route_name:
+                result.append(output)
+                continue
+
+    return result
+
+
 def check_route_name(route_data, IGNORED_LINES: list[str],
                      ONLY_LINES: Optional[list[str]] = None):
     if ONLY_LINES is None:
@@ -476,6 +527,9 @@ def check_route_name(route_data, IGNORED_LINES: list[str],
     lines_to_check = [x.lower().strip()
                       for x in IGNORED_LINES + ONLY_LINES if x != '']
     n: str = route_data['name']
+    if n.lower().strip() in lines_to_check:
+        return bool(IGNORED_LINES)
+
     number: str = route_data['number']
     route_names = [n, n.split('|')[0], n.split('||')[0]]
     if ('||' in n and n.count('|') > 2) or \
@@ -663,8 +717,11 @@ def gen_timetable(data: dict, IGNORED_LINES: list[str], ONLY_LINES: list[str],
 
     if filename != '':
         if not os.path.exists(filename):
-            with open(filename, 'wb') as f:
-                pickle.dump(tt_dict, f)
+            try:
+                with open(filename, 'wb') as f:
+                    pickle.dump(tt_dict, f)
+            except PermissionError:
+                pass
 
     return tt_dict
 
@@ -818,18 +875,25 @@ def process_path(result: list[tuple], start: str, end: str,
     last_detail = None
     route_new = []
     low_i = MAX_INT
+    # 合并连续乘坐同一辆车的路段
     for i in range(len(result) - 1, -1, -1):
         new_leg = result[i]
-        if i >= low_i:
-            continue
 
         if len(new_leg) < 6:
+            # 步行路线
             route_new.append(new_leg)
+            continue
+
+        if i >= low_i:
             continue
 
         trip = trips[str(new_leg[5])]
         for j in range(i - 1, -1, -1):
             old_leg = result[j]
+            if len(old_leg) < 6:
+                # 步行路线
+                break
+
             trip_index = str(old_leg[0])
             if trip_index not in trip:
                 continue
@@ -892,13 +956,13 @@ def process_path(result: list[tuple], start: str, end: str,
                     try:
                         sta1_index = [i for (i, v) in enumerate(sta_ids[:i2])
                                       if v == sta1_id][-1]
-                    except ValueError:
+                    except (IndexError, ValueError):
                         pass
                     else:
                         platform = z['stations'][sta1_index]['name']
                         break
 
-                except ValueError:
+                except (IndexError, ValueError):
                     platform = None
                     break
 
