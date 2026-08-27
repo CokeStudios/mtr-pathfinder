@@ -38,7 +38,7 @@ opencc4 = OpenCC('jp2t')
 
 
 def get_close_matches(words, possibilities, cutoff=0.2):
-    result = [(-1, None)]
+    result: list[tuple[float, Any]] = [(-1, None)]
     s = SequenceMatcher()
     for word in words:
         s.set_seq2(word)
@@ -105,7 +105,7 @@ def draw_text_v2(
     draw: ImageDraw.ImageDraw,
     xy: Tuple[int, int],
     text: str,
-    color: Tuple[int, int, int],
+    color: Union[Tuple[int, int, int], str],
     fonts: Dict[str, TTFont],
     size: int,
     anchor: Optional[str] = None,
@@ -162,11 +162,11 @@ def draw_text_v2(
 
 # From https://github.com/trainline-eu/csa-challenge/blob/2aa0fa55e466692d404d87aa2dcaf5b83bca5920/csa.py and https://ljn.io/posts/connection-scan-algorithm-with-interchange-time
 class CSA:
-    def __init__(self, max_stations, connections: list[tuple], timeout_min=2):
+    def __init__(self, max_stations, connections: list[Any], timeout_min=2):
         self.in_connection = array('L')
         self.earliest_arrival = array('L')
         self.max_stations = max_stations
-        self.connections: list[tuple] = connections
+        self.connections: list[Any] = connections
         self.timeout_min = timeout_min
 
     def main_loop(self, arrival_station):
@@ -450,6 +450,8 @@ def station_num_to_name(data: dict, sta: str) -> str:
     for station in data['stations'].values():
         if station['station'] == sta:
             return station['name']
+
+    return ''
 
 
 def sta_id(station: str) -> int:
@@ -793,7 +795,7 @@ def load_tt(tt_dict: dict[str, list[tuple]], data, start, end,
 def process_path(result: list[tuple], start: str, end: str,
                  trips: dict[str, dict[str, int]], data: dict,
                  detail: bool, STATION_TABLE
-                 ) -> Union[list[str, int, int, int, list], tuple]:
+                 ) -> Union[list[Any], tuple]:
     '''
     Process the path, change it into human readable form.
     '''
@@ -993,8 +995,8 @@ def calculate_height_width(pattern: list[tuple[ImagePattern, str, str]],
 
 
 def draw_text(draw: ImageDraw.ImageDraw, xy: tuple[int, int], text: str,
-              color: tuple[int, int, int],
-              fonts: list[ImageFont.FreeTypeFont, dict[str, TTFont]],
+              color: Union[tuple[int, int, int], str],
+              fonts: tuple[ImageFont.FreeTypeFont, dict[str, TTFont]],
               size: int) -> None:
     for x in text:
         if ord(x) >= 128:
@@ -1134,7 +1136,8 @@ def main(station1: str, station2: str, LINK: str,
          CALCULATE_WALKING_WILD: bool = False, ONLY_LRT: bool = False,
          DETAIL: bool = False, MAX_HOUR=3, timetable=None, gen_image=True,
          show=False, departure_time=None, tz=0,
-         timeout_min=2) -> Union[tuple[Image.Image, str], bool, None]:
+         timeout_min=2) -> Union[tuple[Image.Image, str], list, tuple,
+                                 bool, None]:
     '''
     Find the shortest path between two stations.
     Args:
@@ -1263,6 +1266,7 @@ def main(station1: str, station2: str, LINK: str,
     if ert[0] in [False, None]:
         return ert[0]
 
+    assert isinstance(ert, list)
     return save_image(route_type, ert, BASE_PATH, version1, version2,
                       PNG_PATH, departure_time, show)
 

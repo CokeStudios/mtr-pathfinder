@@ -11,7 +11,7 @@ from operator import itemgetter
 from statistics import median_low
 from threading import Thread, BoundedSemaphore
 from time import gmtime, strftime, time
-from typing import Optional, Dict, Literal, Tuple, List, Union
+from typing import Any, Optional, Dict, Literal, Tuple, List, Union
 from queue import Queue
 import base64
 import hashlib
@@ -54,7 +54,7 @@ opencc4 = OpenCC('jp2t')
 
 
 def get_close_matches(words, possibilities, cutoff=0.2):
-    result = [(-1, None)]
+    result: list[tuple[float, Any]] = [(-1, None)]
     s = SequenceMatcher()
     for word in words:
         s.set_seq2(word)
@@ -121,7 +121,7 @@ def draw_text_v2(
     draw: ImageDraw.ImageDraw,
     xy: Tuple[int, int],
     text: str,
-    color: Tuple[int, int, int],
+    color: Union[Tuple[int, int, int], str],
     fonts: Dict[str, TTFont],
     size: int,
     anchor: Optional[str] = None,
@@ -160,7 +160,7 @@ def draw_text(
     draw: ImageDraw.ImageDraw,
     xy: Tuple[int, int],
     text: str,
-    color: Tuple[int, int, int],
+    color: Union[Tuple[int, int, int], str],
     fonts: Dict[str, TTFont],
     size: int,
     anchor: Optional[str] = None,
@@ -567,6 +567,9 @@ def get_app_time_v4(route: dict, *,
     Get the approximated time of the two stations in one route.
     '''
     if index1 is None or index2 is None:
+        if station_1_id is None or station_2_id is None:
+            return None
+
         index1, index2 = get_route_station_index(
             route, station_1_id, station_2_id, MTR_VER=4)
         if index2 is None:
@@ -1052,15 +1055,15 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
                 if dist <= (MAX_WILD_BLOCKS ** 2):
                     dist = sqrt(dist)
                     duration = dist / WILD_WALKING_SPEED
-                    if G.has_edge(station, station2) and \
-                            duration - G[station][station2][0]['weight'] > 60:
+                    edge0 = G.get_edge_data(station, station2, 0)
+                    if G.has_edge(station, station2) and edge0 is not None \
+                            and duration - edge0['weight'] > 60:
                         continue
 
                     edges_attr_dict[(station, station2)] = [
                         (f'步行 Walk {round(dist, 2)}m', duration, 0)]
-                    if G.has_edge(station, station2) and \
-                            duration + 120 < \
-                            G[station][station2][0]['weight']:
+                    if G.has_edge(station, station2) and edge0 is not None \
+                            and duration + 120 < edge0['weight']:
                         G.remove_edge(station, station2)
 
         for edge in edges_attr_dict.items():
@@ -1127,7 +1130,7 @@ def gen_all_caches(original_ignored_lines: list[str], LOCAL_FILE_PATH,
 def find_shortest_route(G: nx.MultiDiGraph, start: str, end: str, data: list,
                         STATION_TABLE, MTR_VER,
                         route_type: RouteType, fuzzy_compare=True
-                        ) -> tuple[str, int, int, int, list]:
+                        ) -> tuple[Any, ...]:
     '''
     Find the shortest route between two stations.
     '''
@@ -1223,9 +1226,10 @@ def remove_duplicate(data, ert, shortest_distance):
     return every_route_time, shortest_distance
 
 
-def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
+def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: float,
                  data: list, MTR_VER,
-                 route_type: RouteType) -> tuple[str, int, int, int, list]:
+                 route_type: RouteType) -> tuple[str, float, float, float,
+                                                 list]:
     '''
     Process the path, change it into human readable form.
     '''
@@ -1693,7 +1697,7 @@ def main(station1: str, station2: str, LINK: str,
          IN_THEORY: bool = False, DETAIL: bool = False,
          MTR_VER: int = 3, G=None, gen_image=True, show=False,
          cache=True, data_v3=None, fuzzy_compare=True
-         ) -> Union[tuple[Image.Image, str], bool, None]:
+         ) -> Union[tuple[Image.Image, str], tuple, bool, None]:
     '''
     Find the shortest path between two stations.
     Args:
