@@ -231,9 +231,9 @@ class ImagePattern(Enum):
     TEXT = 40.2
     STATION = 40  # 圆圈 + 黑体字 -> 车站
     THUMB_TEXT = 60  # 路线种类图标 + 灰字 -> 路线名
-    THUMB_INTEND_TEXT = 80
+    THUMB_INDENT_TEXT = 80
     GREY_TEXT = 40.1
-    GREY_INTEND_TEXT = 60.1
+    GREY_INDENT_TEXT = 60.1
 
 
 def round_ten(n: float) -> int:
@@ -465,17 +465,17 @@ def sta_id(station: str) -> int:
     return int('0x' + station, 16)
 
 
-def route_name_to_id(data: list, route_name: str, name=False) -> list[str]:
+def route_name_to_id(data_v4: dict, route_name: str, name=False) -> list[str]:
     '''
     Convert one route's name to the IDs/names of its possible matches.
     '''
-    for route in data[0]['routes']:
-        if route_name == route['id']:
-            return [route_name]
+    for route_id, route_data in data_v4['routes'].items():
+        if route_name == route_id:
+            return [route_id] if name is not True else [route_data['name']]
 
     route_name = route_name.lower()
     result = []
-    for route in data[0]['routes']:
+    for route in data_v4['routes'].values():
         if name is True:
             output: str = route['name']
         else:
@@ -1045,10 +1045,10 @@ def calculate_height_width(pattern: list[tuple[ImagePattern, str, str]],
                       if x[0] not in
                       [ImagePattern.FAKE_STATION, ImagePattern.OR,
                        ImagePattern.THUMB_TEXT,
-                       ImagePattern.THUMB_INTEND_TEXT]]
+                       ImagePattern.THUMB_INDENT_TEXT]]
     route_len_list += [font.getlength(x[2]) + int(x[0].value) for x in pattern
                        if x[0] in [ImagePattern.THUMB_TEXT,
-                                   ImagePattern.THUMB_INTEND_TEXT]]
+                                   ImagePattern.THUMB_INDENT_TEXT]]
     if route_type != RouteType.IN_THEORY:
         len_final_str = font2.getlength(final_str) + 40
         if max(route_len_list) > len_final_str:
@@ -1148,7 +1148,7 @@ def generate_image(pattern, route_type, BASE_PATH, version1, version2,
 
             draw_text(draw, (60, y), pat[2], colour, fonts, 20)
 
-        elif pat[0] == ImagePattern.THUMB_INTEND_TEXT:
+        elif pat[0] == ImagePattern.THUMB_INDENT_TEXT:
             image.paste(pat[1], (50, y - 5))
             if len(pat) > 3:
                 colour = pat[3]
@@ -1160,7 +1160,7 @@ def generate_image(pattern, route_type, BASE_PATH, version1, version2,
         elif pat[0] == ImagePattern.GREY_TEXT:
             draw_text(draw, (35, y), pat[1], 'grey', fonts, 20)
 
-        elif pat[0] == ImagePattern.GREY_INTEND_TEXT:
+        elif pat[0] == ImagePattern.GREY_INDENT_TEXT:
             draw_text(draw, (55, y), pat[1], 'grey', fonts, 20)
 
         y += 30

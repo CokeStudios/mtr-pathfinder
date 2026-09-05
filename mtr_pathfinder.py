@@ -208,9 +208,9 @@ class ImagePattern(Enum):
     TEXT = 40.2
     STATION = 40  # 圆圈 + 黑体字 -> 车站
     THUMB_TEXT = 60  # 路线种类图标 + 灰字 -> 路线名
-    THUMB_INTEND_TEXT = 80
+    THUMB_INDENT_TEXT = 80
     GREY_TEXT = 40.1
-    GREY_INTEND_TEXT = 60.1
+    GREY_INDENT_TEXT = 60.1
 
 
 def round_ten(n: float) -> int:
@@ -1081,6 +1081,7 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
 
             edges_attr_dict[(s1, s2)] = [(final_routes, min_dur, sum_int)]
 
+    edges_to_add = []
     for edge in edges_attr_dict.items():
         u, v = edge[0]
         min_time = min(e[1] + e[2] for e in edge[1])
@@ -1100,8 +1101,11 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
             waiting_time = r[2]
             weight = duration + waiting_time
             if abs(weight - min_time) <= 60 and weight > 0:
-                G.add_edge(u, v, weight=weight, name=route_name,
-                           waiting=waiting_time, platform=platform)
+                edges_to_add.append(
+                    (u, v, {'weight': weight, 'name': route_name,
+                            'waiting': waiting_time, 'platform': platform}))
+
+    G.add_edges_from(edges_to_add)
 
     # 添加野外行走 (无铁路连接)
     if CALCULATE_WALKING_WILD is True:
@@ -1141,14 +1145,12 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
                             G[station][station2][0]['weight']:
                         G.remove_edge(station, station2)
 
-        for edge in edges_attr_dict.items():
-            u, v = edge[0]
-            for r in edge[1]:
-                route_name = r[0]
-                duration = r[1]
-                waiting_time = r[2]
-                G.add_edge(u, v, weight=duration, name=route_name,
-                           waiting=waiting_time)
+        edges_to_add = [
+            (u, v, {'weight': d, 'name': name, 'waiting': w})
+            for (u, v), routes in edges_attr_dict.items()
+            for name, d, w in routes
+        ]
+        G.add_edges_from(edges_to_add)
 
     if not os.path.exists('mtr_pathfinder_temp'):
         os.makedirs('mtr_pathfinder_temp')
@@ -1240,6 +1242,7 @@ def find_shortest_route(G: nx.MultiDiGraph, start: str, end: str, data: list,
 
 
 def remove_duplicate(data, ert, shortest_distance):
+    original_shortest_distance = shortest_distance
     all_routes = data[0]['routes']
     new_ert = []
     removed_legs = []
@@ -1267,6 +1270,9 @@ def remove_duplicate(data, ert, shortest_distance):
                     sta1 = old_leg[k][10][1]
                     sta2 = old_leg[k][10][2]
                     stations = x['stations']
+                    if x['circular'] in ['cw', 'ccw']:
+                        stations += stations[1:]
+
                     sta_ids = [y['id'] for y in stations]
                     dwells = [round(y['dwellTime'] / 1000)
                               for y in stations]
@@ -1286,7 +1292,7 @@ def remove_duplicate(data, ert, shortest_distance):
                             break
 
                     if i2 is None:
-                        return list(chain(*ert))
+                        return list(chain(*ert)), original_shortest_distance
 
                     dwell = sum(dwells[i1 + 1:i2])
                     old_leg[k][4] = old_leg[k][4][:3]
@@ -1507,6 +1513,7 @@ def save_image(route_type: RouteType, every_route_time: list,
     '''
     pattern = []
     last_sta = ()
+    last_output = []
     time_img = Image.open(PNG_PATH + os.sep + 'time.png')
     for route_data in every_route_time:
         now_sta = (route_data[0], route_data[1])
@@ -1516,9 +1523,9 @@ def save_image(route_type: RouteType, every_route_time: list,
         else:
             terminus = route_data[4][0] + '方向 To ' + route_data[4][1]
 
-        time1 = str(strftime('%H:%M:%S', gmtime(route_data[5])))
-        time2 = str(strftime('%H:%M:%S', gmtime(route_data[6])))
-        time3 = str(strftime('%H:%M:%S', gmtime(route_data[7])))
+        time1 = str(strftime('%H:%M:%S', gmtime(route_data[5])))  # 乘车时间
+        time2 = str(strftime('%H:%M:%S', gmtime(route_data[6])))  # 平均等车时间
+        time3 = str(strftime('%H:%M:%S', gmtime(route_data[7])))  # 分线路等车时间
         if int(time1.split(':', maxsplit=1)[0]) == 0:
             time1 = ''.join(time1.split(':', maxsplit=1)[1:])
         if int(time2.split(':', maxsplit=1)[0]) == 0:
@@ -1526,8 +1533,16 @@ def save_image(route_type: RouteType, every_route_time: list,
         if int(time3.split(':', maxsplit=1)[0]) == 0:
             time3 = ''.join(time3.split(':', maxsplit=1)[1:])
 
+        if DETAIL and route_type == RouteType.WAITING:
+            visual_text = (route_data[0], route_data[3], terminus,
+                           time1, time2, time3)
+        else:
+            visual_text = (route_data[0], route_data[3], terminus, time1)
+
         if now_sta != last_sta:
             # 正常
+            last_output = []
+            last_output.append(visual_text)
             pattern.append((ImagePattern.STATION, route_data[0],
                             route_data[2]))  # 车站
             if DETAIL and route_type == RouteType.WAITING and \
@@ -1551,20 +1566,22 @@ def save_image(route_type: RouteType, every_route_time: list,
                 colour = 'black'
             pattern.append((ImagePattern.THUMB_TEXT, time_img,
                             prefix + time1, colour))  # 用时
-        else:
+        elif visual_text not in last_output:
+            # "或"
+            last_output.append(visual_text)
             pattern.append((ImagePattern.OR, ))
             pattern.append((ImagePattern.FAKE_STATION, route_data[2]))
             # 有缩进
-            pattern.append((ImagePattern.THUMB_INTEND_TEXT, route_img,
+            pattern.append((ImagePattern.THUMB_INDENT_TEXT, route_img,
                             route_data[3]))  # 路线名
             if route_data[8] is not None:
                 # 正常
-                pattern.append((ImagePattern.GREY_INTEND_TEXT,
+                pattern.append((ImagePattern.GREY_INDENT_TEXT,
                                 terminus))  # 方向
 
             if DETAIL and route_type == RouteType.WAITING and \
                     route_data[8] is not None:
-                pattern.append((ImagePattern.THUMB_INTEND_TEXT, time_img,
+                pattern.append((ImagePattern.THUMB_INDENT_TEXT, time_img,
                                 f'间隔 Interval {time3}'))  # 用时
 
             prefix = ''
@@ -1572,7 +1589,7 @@ def save_image(route_type: RouteType, every_route_time: list,
             if DETAIL and route_data[8] is not None:
                 prefix = '乘车 Ride '
                 colour = 'black'
-            pattern.append((ImagePattern.THUMB_INTEND_TEXT, time_img,
+            pattern.append((ImagePattern.THUMB_INDENT_TEXT, time_img,
                             prefix + time1, colour))  # 用时
 
         last_sta = (route_data[0], route_data[1])
@@ -1601,10 +1618,10 @@ def calculate_height_width(pattern: list[tuple[ImagePattern, str, str]],
                       if x[0] not in
                       [ImagePattern.FAKE_STATION, ImagePattern.OR,
                        ImagePattern.THUMB_TEXT,
-                       ImagePattern.THUMB_INTEND_TEXT]]
+                       ImagePattern.THUMB_INDENT_TEXT]]
     route_len_list += [font.getlength(x[2]) + int(x[0].value) for x in pattern
                        if x[0] in [ImagePattern.THUMB_TEXT,
-                                   ImagePattern.THUMB_INTEND_TEXT]]
+                                   ImagePattern.THUMB_INDENT_TEXT]]
     len_final_str = font2.getlength(final_str) + 40
     if max(route_len_list) > len_final_str:
         width = round(max(route_len_list))
@@ -1701,7 +1718,7 @@ def generate_image(pattern, shortest_distance, riding_time, waiting_time,
 
             draw_text(draw, (60, y), pat[2], colour, fonts, 20)
 
-        elif pat[0] == ImagePattern.THUMB_INTEND_TEXT:
+        elif pat[0] == ImagePattern.THUMB_INDENT_TEXT:
             image.paste(pat[1], (50, y - 5))
             if len(pat) > 3:
                 colour = pat[3]
@@ -1713,7 +1730,7 @@ def generate_image(pattern, shortest_distance, riding_time, waiting_time,
         elif pat[0] == ImagePattern.GREY_TEXT:
             draw_text(draw, (35, y), pat[1], 'grey', fonts, 20)
 
-        elif pat[0] == ImagePattern.GREY_INTEND_TEXT:
+        elif pat[0] == ImagePattern.GREY_INDENT_TEXT:
             draw_text(draw, (55, y), pat[1], 'grey', fonts, 20)
 
         y += 30
