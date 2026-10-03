@@ -26,7 +26,7 @@ from PIL import Image, ImageDraw, ImageFont
 import networkx as nx
 import requests
 
-CACHE_VERSION = '130'
+CACHE_VERSION = '137'
 SERVER_TICK: int = 20
 
 DEFAULT_AVERAGE_SPEED: dict = {
@@ -919,6 +919,12 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
         if len(stations) - 1 > len(durations):
             continue
 
+        # 修复多条路线名称相同造成的 Bug
+        if MTR_VER == 3:
+            route['_name'] = route['number'] + ' ' + route['name']
+        elif MTR_VER == 4:
+            route['_name'] = route['id']
+
         # if route_type == RouteType.WAITING:
         for i in range(len(durations)):
             for i2 in range(len(durations[i:])):
@@ -980,9 +986,9 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
                         edges_dict[(station_1, station_2)] = []
 
                     edges_dict[(station_1, station_2)].append(
-                        (dur, wait, route['name'], platform))
+                        (dur, wait, route['_name'], platform))
 
-                    original_tuple = (route['name'], station_1, station_2)
+                    original_tuple = (route['_name'], station_1, station_2)
                     if original_tuple in original:
                         dur1 = original[original_tuple]
                         if dur < dur1:
@@ -994,7 +1000,7 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
                         edges_attr_dict[(station_1, station_2)] = []
 
                     edges_attr_dict[(station_1, station_2)].append(
-                        ((route['name'], platform), dur, 0))
+                        ((route['_name'], platform), dur, 0))
 
         # else:
             # for i, duration in enumerate(durations):
@@ -1021,10 +1027,10 @@ def create_graph(data: list, IGNORED_LINES: list[str], ONLY_LINES: list[str],
             #     if add_edge is True:
             #         if (station_1, station_2) in edges_attr_dict:
             #             edges_attr_dict[(station_1, station_2)].append(
-            #                 (route['name'], t, 0))
+            #                 (route['_name'], t, 0))
             #         else:
             #             edges_attr_dict[(station_1, station_2)] = [
-            #                 (route['name'], t, 0)]
+            #                 (route['_name'], t, 0)]
 
     if route_type == RouteType.WAITING:
         # 合并两站间的线路、等车时间
@@ -1327,7 +1333,7 @@ def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
         edge = G[station_1][station_2]
         duration_list = []
         waiting_list = []
-        route_name_list = []
+        route_name_list: list[str] = []
         platform_list = []
         for v in edge.values():
             duration = v['weight']
@@ -1348,10 +1354,29 @@ def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
 
             waiting_time += waiting
 
-        if len(route_name_list) == 1:
-            route_name = route_name_list[0]
+        # 修复多条路线名称相同造成的 Bug
+        new_route_name_list = []
+        if MTR_VER == 3:
+            route_id_to_route = {f'{_["number"]} {_["name"]}': _
+                                 for _ in routes}
+            for r_name in route_name_list:
+                new_name = r_name.split(' ', maxsplit=1)[1]
+                new_route_name_list.append(new_name)
+
+        elif MTR_VER == 4:
+            route_id_to_route = {_['id']: _ for _ in routes}
+            for r_name in route_name_list:
+                if (_route := route_id_to_route.get(r_name)) is not None:
+                    new_name = _route['name']
+                else:
+                    new_name = r_name
+
+                new_route_name_list.append(new_name)
+
+        if len(new_route_name_list) == 1:
+            route_name = new_route_name_list[0]
         else:
-            route_name = '(' + ' / '.join(route_name_list) + ')'
+            route_name = '(' + ' / '.join(new_route_name_list) + ')'
 
         station_names.append(route_name)
         station_names.append(stations[path[i + 1]]['name'])
@@ -1383,78 +1408,81 @@ def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
                             waiting = x[1]
                             break
 
+            new_route_name = new_route_name_list[i1]
             platform = platform_list[i1]
-            for z in routes:
-                if z['name'] == route_name:
-                    route = (z['number'] + ' ' +
-                             route_name.split('||')[0]).strip()
-                    route = route.replace('|', ' ')
-                    next_id = None
-                    if MTR_VER == 3:
-                        sta_id = z['stations'][-1].split('_')[0]
-                        for q, x in enumerate(z['stations']):
-                            if x.split('_')[0] == sta1_id and \
-                                    q != len(z['stations']) - 1:
-                                next_id = z['stations'][q + 1].split('_')[0]
-                                break
-                    else:
-                        sta_id = z['stations'][-1]['id']
-                        for q, x in enumerate(z['stations']):
-                            if x['id'] == sta1_id and \
-                                    q != len(z['stations']) - 1:
-                                next_id = z['stations'][q + 1]['id']
-                                break
+            z = route_id_to_route.get(route_name)
+            if z is not None:
+                route = (z['number'] + ' ' +
+                         new_route_name.split('||')[0]).strip()
+                route = route.replace('|', ' ')
+                next_id = None
+                if MTR_VER == 3:
+                    sta_id = z['stations'][-1].split('_')[0]
+                    for q, x in enumerate(z['stations']):
+                        if x.split('_')[0] == sta1_id and \
+                                q != len(z['stations']) - 1:
+                            next_id = z['stations'][q + 1].split('_')[0]
+                            break
+                else:
+                    sta_id = z['stations'][-1]['id']
+                    for q, x in enumerate(z['stations']):
+                        if x['id'] == sta1_id and \
+                                q != len(z['stations']) - 1:
+                            next_id = z['stations'][q + 1]['id']
+                            break
 
-                    if z['circular'] in ['cw', 'ccw']:
-                        sta_id = next_id
+                if z['circular'] in ['cw', 'ccw']:
+                    sta_id = next_id
 
-                    terminus_name: str = stations[sta_id]['name']
-                    if terminus_name.count('|') == 0:
-                        t1_name = t2_name = terminus_name
-                    else:
-                        t1_name = terminus_name.split('|')[0]
-                        t2_name = terminus_name.split('|')[1]
-                        t2_name = t2_name.replace('|', ' ')
+                terminus_name: str = stations[sta_id]['name']
+                if terminus_name.count('|') == 0:
+                    t1_name = t2_name = terminus_name
+                else:
+                    t1_name = terminus_name.split('|')[0]
+                    t2_name = terminus_name.split('|')[1]
+                    t2_name = t2_name.replace('|', ' ')
 
-                    if z['circular'] == 'cw':
-                        if next_id is None:
-                            t1_name = '(顺时针) ' + t1_name
-                            t2_name += ' (Clockwise)'
-                            terminus = (t1_name, t2_name)
-                        else:
-                            name1 = '(顺时针) 经由' + t1_name
-                            name2 = f'(Clockwise) Via {t2_name}'
-                            terminus = (True, name1, name2)
-                    elif z['circular'] == 'ccw':
-                        if next_id is None:
-                            t1_name = '(逆时针) ' + t1_name
-                            t2_name += ' (Counterclockwise)'
-                            terminus = (t1_name, t2_name)
-                        else:
-                            name1 = '(逆时针) 经由' + t1_name
-                            name2 = f'(Counterclockwise) Via {t2_name}'
-                            terminus = (True, name1, name2)
-                    else:
+                if z['circular'] == 'cw':
+                    if next_id is None:
+                        t1_name = '(顺时针) ' + t1_name
+                        t2_name += ' (Clockwise)'
                         terminus = (t1_name, t2_name)
-
-                    if MTR_VER == 4 and route_type == RouteType.IN_THEORY:
-                        terminus = list(terminus)
-                        if len(terminus) == 2:
-                            terminus += ['']
-
-                        terminus += [z['circular']]
-
-                    color = hex(z['color']).lstrip('0x').rjust(6, '0')
-                    train_type = z['type']
-                    if MTR_VER == 4:
-                        route_id = z['id']
                     else:
-                        route_id = None
-                    break
+                        name1 = '(顺时针) 经由' + t1_name
+                        name2 = f'(Clockwise) Via {t2_name}'
+                        terminus = (True, name1, name2)
+
+                elif z['circular'] == 'ccw':
+                    if next_id is None:
+                        t1_name = '(逆时针) ' + t1_name
+                        t2_name += ' (Counterclockwise)'
+                        terminus = (t1_name, t2_name)
+                    else:
+                        name1 = '(逆时针) 经由' + t1_name
+                        name2 = f'(Counterclockwise) Via {t2_name}'
+                        terminus = (True, name1, name2)
+
+                else:
+                    terminus = (t1_name, t2_name)
+
+                if MTR_VER == 4 and route_type == RouteType.IN_THEORY:
+                    terminus = list(terminus)
+                    if len(terminus) == 2:
+                        terminus += ['']
+
+                    terminus += [z['circular']]
+
+                color = hex(z['color']).lstrip('0x').rjust(6, '0')
+                train_type = z['type']
+                if MTR_VER == 4:
+                    route_id = z['id']
+                else:
+                    route_id = None
+
             else:
                 color = '000000'
-                route = route_name
-                terminus = (route_name.split('，用时')[0], 'Walk')
+                route = new_route_name
+                terminus = (new_route_name.split('，用时')[0], 'Walk')
                 if MTR_VER == 4 and route_type == RouteType.IN_THEORY:
                     terminus = list(terminus)
                     terminus += ['', '']
@@ -1465,8 +1493,8 @@ def process_path(G: nx.MultiDiGraph, path: list, shortest_distance: int,
             color = '#' + color
 
             sep_waiting = None
-            if route_name in intervals:
-                sep_waiting = int(intervals[route_name])
+            if new_route_name in intervals:
+                sep_waiting = int(intervals[new_route_name])
 
             r = [sta1_name, sta2_name, color, route, terminus, duration,
                  waiting, sep_waiting, train_type, platform,
